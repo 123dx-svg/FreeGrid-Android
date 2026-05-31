@@ -9,7 +9,8 @@
 - 四屏(Dashboard/Assets/History/Check)+ 真持久化(localStorage)+ 导入 iOS 导出的 JSON + 录入弹窗(记支出/收入/模拟/改桶/加被动)+ 月度汇总下钻 + 流星/呼吸动画。**能在电脑/手机网页真正记账**。
 - 数据流:`store.svelte.ts`(响应式中央 store,localStorage 持久化,codec = iOS `BackupJSON` snake_case)→ 四屏 `$derived` 读 store。引擎 `freedom-math.ts`(14 vitest)。
 - push `origin/main` → CF 自动构建部署(约 1-2 分钟)。本地 `npm run dev` 开发 / `npm run build` 出 `dist`。
-- **下一步候选**:Dashboard 记账时格子级联(模拟决策的格子推演已做,见下;这里指真实记账后 LifeGrid 即时点亮/熄灭)· 统一页面大标题语言(Dashboard/Check 中文 vs Assets/History 英文)· Tauri 套桌面壳 · 自定义域名 freegrid.conilab.cn。
+- **🖥 Windows 桌面版已发布**(Tauri,2026-05-31):[releases/tag/desktop-v1.0.0](https://github.com/coni555/FreeGrid-Web/releases/tag/desktop-v1.0.0)(`.exe`/`.msi`,~2MB,未签名)。出新版/原理见下方「Windows / 桌面版(Tauri)」段。
+- **下一步候选**:Dashboard 记账时格子级联(模拟决策的格子推演已做,见下;这里指真实记账后 LifeGrid 即时点亮/熄灭)· 统一页面大标题语言(Dashboard/Check 中文 vs Assets/History 英文)· 自定义域名 freegrid.conilab.cn · 桌面版代码签名(去 SmartScreen 警告)。
 
 ## 形态与栈(已定)
 
@@ -51,6 +52,19 @@
 - [x] **已部署上线 → [freegrid-web.pages.dev](https://freegrid-web.pages.dev)**(CF Pages Git 集成,push 自动构建部署)
       · ⚠️ **白屏坑(已修)**:CF 构建配置「输出目录」必须是 `dist`,否则 CF 把仓库根 index.html(引 `/src/main.ts`)当站点发 → 白屏(SPA fallback)。框架预设选 Svelte 会把输出设成 SvelteKit 的 `build` → 踩坑。正确:framework=None,build=`npm run build`,output=`dist`
       · ⚠️ PWA 缓存:发新版后用户要硬刷新(Cmd+Shift+R)或重开标签让 SW 更新
+
+## Windows / 桌面版(Tauri,2026-05-31 上线)
+
+把同一套 web 内核(`dist`)用 **Tauri v2** 套桌面壳,产 Windows 安装包。**首个安装包已发布**:
+[releases/tag/desktop-v1.0.0](https://github.com/coni555/FreeGrid-Web/releases/tag/desktop-v1.0.0) — `FreeGrid_1.0.0_x64-setup.exe`(NSIS,~2MB)+ `.msi`。
+
+- **工程**:`src-tauri/`(identifier `cn.conilab.freegrid`,窗口 1280×832 居中/最小 480×640)。图标从 `public/icons/icon-512.png` 生成全套(`tauri icon`)。`npm run tauri build` 本地出 Mac 包自验(~4MB dmg)。
+- **为什么走云构建**:macOS **不能可靠交叉编译** Windows 安装包 → 用 **GitHub Actions 的 windows-latest** 出包。
+- **出新版流程**:① 改 `src-tauri/tauri.conf.json` 的 `version`(可同步 Cargo.toml)② `git tag desktop-vX.Y.Z && git push origin desktop-vX.Y.Z` → workflow `.github/workflows/build-windows.yml`(`tauri-action`)自动构建 NSIS+MSI 并挂到对应 Release。也可在 Actions 页手动 Run(workflow_dispatch,回退 tag `desktop-latest`)。
+- ⚠️ **未签名**:首次运行 Windows SmartScreen 拦「Windows 已保护你的电脑」→ 点「更多信息 → 仍要运行」。和 iOS Freedom 那版未签名 .ipa 取舍一致。要去掉警告得买代码签名证书(~$200+/年),签名步骤可接进 workflow。
+- ⚠️ **代理墙**:云构建在 GitHub 跑,不受本地代理墙影响;tag 推送走 git 传输也能绕过。下载安装包从 Release 页(github.com)即可。
+- ⚠️ **首次构建 ~7 分钟**(Windows runner 从零编译 Rust);后续有 `swatinem/rust-cache` 缓存会快。
+- **没在真 Windows 上跑测**:本地 Mac 包已验 WebView 完整渲染无白屏(WKWebView),Windows 用 WebView2 引擎、同属标准浏览器内核,且 web 版本就在 Chrome 验过 → 高置信但未在 Windows 实机验证安装/启动。
 
 ## 设计源（2026-05-30 续2 修正)
 
