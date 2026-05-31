@@ -24,6 +24,7 @@
 /* ===== 暗色(主)— 天文台冷蓝紫黑 ===== */
 :root,
 :root[data-theme="dark"] {
+  color-scheme: dark; /* 原生控件(date picker / select / 滚动条)跟暗色 */
   --paper: rgb(10, 11, 19);
   --mist: rgb(20, 22, 33);
   --mist2: rgb(28, 31, 45);
@@ -49,6 +50,7 @@
 
 /* ===== 浅色 — 冷白银 ===== */
 :root[data-theme="light"] {
+  color-scheme: light;
   --paper: rgb(243, 243, 245);
   --mist: rgb(255, 255, 255);
   --mist2: rgb(238, 238, 240);

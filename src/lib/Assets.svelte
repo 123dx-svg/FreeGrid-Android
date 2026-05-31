@@ -165,10 +165,7 @@
     <h1>Assets</h1>
   </header>
 
-  <!-- 上半区:左 净值 + 双桶,右 被动 + 调拨 -->
-  <div class="upper">
-    <div class="col">
-      <!-- ───── 净值 ───── -->
+  <!-- ───── 净值 ───── -->
       <section class="vault-card hi networth">
         <span class="kicker">NET WORTH · 净值</span>
         <div class="nw-number num">{yuan(vm.netWorth)}</div>
@@ -211,9 +208,7 @@
           <div class="bucket-amount num">{yuan(vm.cash)}</div>
         </section>
       </div>
-    </div>
 
-    <div class="col">
       <!-- ───── 被动收入 ───── -->
       <section class="vault-card passive">
         <div class="passive-head">
@@ -302,8 +297,6 @@
           确认调拨
         </button>
       </section>
-    </div>
-  </div>
 
   <!-- ───── 说明 ───── -->
   <section class="explain">
@@ -447,19 +440,6 @@
     font-weight: 500;
     margin: 4px 0 0;
     letter-spacing: -0.01em;
-  }
-
-  /* ── 上半区双列 ── */
-  .upper {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--sp-lg);
-    align-items: start;
-  }
-  .col {
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-lg);
   }
 
   /* ── 净值 ── */

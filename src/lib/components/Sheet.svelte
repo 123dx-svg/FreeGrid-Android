@@ -6,9 +6,10 @@
   let {
     open = false,
     title = "",
+    wide = false,
     onClose,
     children,
-  }: { open?: boolean; title?: string; onClose?: () => void; children?: Snippet } = $props();
+  }: { open?: boolean; title?: string; wide?: boolean; onClose?: () => void; children?: Snippet } = $props();
 
   function backdropClick(e: MouseEvent) {
     if (e.target === e.currentTarget) onClose?.();
@@ -26,7 +27,7 @@
 
 {#if open}
   <div class="backdrop" onclick={backdropClick} role="presentation">
-    <div class="sheet" role="dialog" aria-modal="true">
+    <div class="sheet" class:wide role="dialog" aria-modal="true">
       <div class="sheet-head">
         <span class="kicker">{title}</span>
         <button class="close" onclick={() => onClose?.()} aria-label="关闭">✕</button>
@@ -42,8 +43,8 @@
   .backdrop {
     position: fixed;
     inset: 0;
-    background: color-mix(in srgb, var(--paper) 78%, transparent);
-    backdrop-filter: blur(6px);
+    background: color-mix(in srgb, var(--paper) 93%, transparent);
+    backdrop-filter: blur(10px);
     display: grid;
     place-items: center;
     z-index: 100;
@@ -61,6 +62,9 @@
     animation: rise 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
     max-height: 88vh;
     overflow-y: auto;
+  }
+  .sheet.wide {
+    max-width: 660px;
   }
   .sheet-head {
     display: flex;

@@ -122,6 +122,18 @@
       });
   });
 
+  // 月份下钻:点击某月展开,看该月明细交易(日期降序)
+  let expandedMonth = $state<string | null>(null);
+  const mKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  function monthTxs(key: string): Tx[] {
+    return allTx
+      .filter((t) => mKey(t.date) === key)
+      .sort((a, b) => b.date.getTime() - a.date.getTime());
+  }
+  function toggleMonth(key: string) {
+    expandedMonth = expandedMonth === key ? null : key;
+  }
+
   // ── 派生:汇总行 ──
   const count = $derived(filteredTransactions.length);
   const net = $derived(
@@ -259,7 +271,7 @@
   {/if}
 
   <!-- ───── 月度汇总 sheet(只读) ───── -->
-  <Sheet open={showMonthly} title="月度汇总" onClose={() => (showMonthly = false)}>
+  <Sheet open={showMonthly} title="月度汇总" wide onClose={() => (showMonthly = false)}>
     {#if monthlyStats.length === 0}
       <div class="ms-empty">
         <svg viewBox="0 0 24 24" class="ms-empty-ic">
@@ -269,13 +281,17 @@
         <p class="ms-empty-title">还没有可汇总的记录</p>
       </div>
     {:else}
+      <p class="ms-hint">点任意月份展开,查看当月每一笔明细</p>
       <div class="ms-list">
         {#each monthlyStats as ms (ms.key)}
-          <div class="ms-card">
-            <div class="ms-head">
+          {@const isOpen = expandedMonth === ms.key}
+          <div class="ms-card" class:open={isOpen}>
+            <button class="ms-head" type="button" onclick={() => toggleMonth(ms.key)} aria-expanded={isOpen}>
               <span class="ms-month">{ms.label}</span>
+              <span class="ms-grow"></span>
               <span class="ms-net num">净 {netDisplay0(ms.net)}</span>
-            </div>
+              <svg class="ms-chev" class:rot={isOpen} viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" /></svg>
+            </button>
             <div class="ms-stats">
               <div class="ms-stat">
                 <span class="ms-stat-label">总支出</span>
@@ -290,6 +306,20 @@
               <div class="ms-cats num">
                 {#each ms.topCategories as c (c.category)}
                   <span class="ms-cat">{c.category} ¥{nf0.format(c.total)}</span>
+                {/each}
+              </div>
+            {/if}
+            {#if isOpen}
+              <div class="ms-detail">
+                {#each monthTxs(ms.key) as t (t.id)}
+                  <div class="ms-tx">
+                    <div class="ms-tx-l">
+                      <span class="ms-tx-name">{t.name}</span>
+                      {#if t.note}<span class="ms-tx-note">{t.note}</span>{/if}
+                      <span class="ms-tx-date">{fmtDate(t.date)}</span>
+                    </div>
+                    <span class="ms-tx-amt num {t.kind}">{t.kind === "income" ? "+" : "−"}¥{nf0.format(t.amount)}</span>
+                  </div>
                 {/each}
               </div>
             {/if}
@@ -567,9 +597,33 @@
   }
   .ms-head {
     display: flex;
-    align-items: baseline;
-    justify-content: space-between;
+    align-items: center;
     gap: var(--sp-sm);
+    width: 100%;
+    border: 0;
+    background: transparent;
+    padding: 4px 0;
+    cursor: pointer;
+    font-family: inherit;
+    color: inherit;
+    text-align: left;
+  }
+  .ms-grow {
+    flex: 1;
+  }
+  .ms-chev {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: var(--ink-faint);
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transition: transform 0.18s ease;
+    flex: 0 0 16px;
+  }
+  .ms-chev.rot {
+    transform: rotate(90deg);
   }
   .ms-month {
     font-size: 15px;
@@ -618,6 +672,55 @@
     font-size: 11px;
     letter-spacing: 0.03em;
     color: var(--ink-muted);
+  }
+  .ms-hint {
+    font-size: 12px;
+    color: var(--ink-faint);
+    margin: 0 0 var(--sp-md);
+  }
+  .ms-detail {
+    margin-top: var(--sp-sm);
+    padding-top: var(--sp-xs);
+    border-top: 1px solid var(--hairline-soft);
+    display: flex;
+    flex-direction: column;
+  }
+  .ms-tx {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-md);
+    padding: 9px 0;
+    border-bottom: 1px solid var(--hairline-soft);
+  }
+  .ms-tx:last-child {
+    border-bottom: 0;
+  }
+  .ms-tx-l {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-sm);
+    flex-wrap: wrap;
+  }
+  .ms-tx-name {
+    font-size: 14px;
+    color: var(--ink);
+  }
+  .ms-tx-note,
+  .ms-tx-date {
+    font-size: 12px;
+    color: var(--ink-faint);
+  }
+  .ms-tx-amt {
+    font-size: 14px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .ms-tx-amt.expense {
+    color: var(--flame);
+  }
+  .ms-tx-amt.income {
+    color: var(--sky-deep);
   }
   .ms-empty {
     display: flex;
