@@ -1,0 +1,56 @@
+name: Build Windows Installer
+
+# 在 macOS 上无法可靠交叉编译 Windows 安装包 → 用 GitHub 的 Windows 云构建机出包。
+# 触发:推送 desktop-v* 标签(git 传输,绕过本地代理墙),或在 Actions 页手动 Run。
+# 产物:Tauri NSIS(.exe setup)+ MSI 安装包,自动挂到对应 tag 的 Release。
+
+on:
+  push:
+    tags:
+      - "desktop-v*"
+  workflow_dispatch:
+
+# tauri-action 要创建 Release + 上传产物,需要写权限
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install frontend deps
+        run: npm ci
+
+      - name: Build Tauri (Windows installer)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # workflow_dispatch 无 tag 时回退到固定标签,避免空 tagName 报错
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'desktop-latest' }}
+          releaseName: "FreeGrid 桌面版 ${{ github.ref_type == 'tag' && github.ref_name || 'latest' }}"
+          releaseBody: |
+            FreeGrid Windows 桌面版（Tauri 套同一套网页内核，本地存储 · 零网络）。
+
+            **安装**：下载 `.exe`（NSIS 安装程序）双击安装。
+            ⚠️ 未做代码签名 → 首次运行 SmartScreen 会拦：点「更多信息 → 仍要运行」即可。
+          releaseDraft: false
+          prerelease: false
