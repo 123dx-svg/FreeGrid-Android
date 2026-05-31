@@ -1,47 +1,46 @@
-# Svelte + TS + Vite
+# FreeGrid Web · 通往财富自由之路
 
-This template should help get you started developing with Svelte and TypeScript in Vite.
+> [iOS 版 FreeGrid](https://github.com/coni555/FreeGrid-Freedom) 的网页 / PWA 版 —— 把「财富自由」翻译成一个你每天看得见的数字:**自由天数**。一套 silverline 设计,为桌面宽屏重排,Mac / PC / 手机浏览器都能用。
+>
+> *The web/PWA companion to the iOS app: how many days you could live without earning another cent.*
 
-## Recommended IDE Setup
+![Svelte](https://img.shields.io/badge/Svelte-5-FF3E00.svg?logo=svelte)
+![Vite](https://img.shields.io/badge/Vite-8-646CFF.svg?logo=vite)
+![PWA](https://img.shields.io/badge/PWA-installable·offline-5a0fc8.svg)
+![Offline](https://img.shields.io/badge/100%25-本地·零网络-2ea44f.svg)
 
-[VS Code](https://code.visualstudio.com/) + [Svelte](https://marketplace.visualstudio.com/items?itemName=svelte.svelte-vscode).
+## 这是什么
 
-## Need an official Svelte framework?
+FreeGrid Web 是 iOS 版 FreeGrid 的**纯前端复刻**:同一套「自由天数 / 自由网格」核心概念和 silverline 视觉语言,用 Svelte 重写并为桌面重新布局(侧栏导航替代手机底 tab)。**零后端、零网络、零账号** —— 数据只存在你浏览器的 localStorage 里。
 
-Check out [SvelteKit](https://github.com/sveltejs/kit#readme), which is also powered by Vite. Deploy anywhere with its serverless-first approach and adapt to various platforms, with out of the box support for TypeScript, SCSS, and Less, and easily-added support for mdsvex, GraphQL, PostCSS, Tailwind CSS, and more.
+四屏:**Dashboard**(自由天数 hero + 自由网格 + 趋势)/ **Assets**(双桶净值 + 被动收入 + 调拨)/ **History**(流水 + 分类筛选)/ **Check**(8 项财富自由自检)。
 
-## Technical considerations
+## 核心特性
 
-**Why use this over SvelteKit?**
+- 📲 **可装的 PWA**:浏览器「添加到主屏」即像原生 App,支持离线。
+- 🔁 **与 iOS 版数据互通**:序列化格式与 iOS 版的备份 JSON 完全一致 —— iOS 版导出 JSON,这里直接导入,数据无缝迁移到桌面。
+- 🔒 **隐私优先**:整个代码库没有任何网络请求,数据从不离开你的浏览器。想备份就导出 JSON。
+- ⚙️ **真引擎驱动**:自由天数 / 自由网格 / 被动覆盖等算法从 iOS 版 1:1 移植并附带单元测试。
 
-- It brings its own routing solution which might not be preferable for some users.
-- It is first and foremost a framework that just happens to use Vite under the hood, not a Vite app.
+## 构建与运行
 
-This template contains as little as possible to get started with Vite + TypeScript + Svelte, while taking into account the developer experience with regards to HMR and intellisense. It demonstrates capabilities on par with the other `create-vite` templates and is a good starting point for beginners dipping their toes into a Vite + Svelte project.
-
-Should you later need the extended capabilities and extensibility provided by SvelteKit, the template has been structured similarly to SvelteKit so that it is easy to migrate.
-
-**Why `global.d.ts` instead of `compilerOptions.types` inside `jsconfig.json` or `tsconfig.json`?**
-
-Setting `compilerOptions.types` shuts out all other types not explicitly listed in the configuration. Using triple-slash references keeps the default TypeScript setting of accepting type information from the entire workspace, while also adding `svelte` and `vite/client` type information.
-
-**Why include `.vscode/extensions.json`?**
-
-Other templates indirectly recommend extensions via the README, but this file allows VS Code to prompt the user to install the recommended extension upon opening the project.
-
-**Why enable `allowJs` in the TS template?**
-
-While `allowJs: false` would indeed prevent the use of `.js` files in the project, it does not prevent the use of JavaScript syntax in `.svelte` files. In addition, it would force `checkJs: false`, bringing the worst of both worlds: not being able to guarantee the entire codebase is TypeScript, and also having worse typechecking for the existing JavaScript. In addition, there are valid use cases in which a mixed codebase may be relevant.
-
-**Why is HMR not preserving my local component state?**
-
-HMR state preservation comes with a number of gotchas! It has been disabled by default in both `svelte-hmr` and `@sveltejs/vite-plugin-svelte` due to its often surprising behavior. You can read the details [here](https://github.com/rixo/svelte-hmr#svelte-hmr).
-
-If you have state that's important to retain within a component, consider creating an external store which would not be replaced by HMR.
-
-```ts
-// store.ts
-// An extremely simple external store
-import { writable } from 'svelte/store'
-export default writable(0)
+```bash
+npm install
+npm run dev      # 本地开发 http://localhost:5173
+npm run build    # 生产构建 → dist/(纯静态)
+npm run preview  # 预览生产包
+npm test         # 跑算法单元测试(vitest)
 ```
+
+零第三方运行时依赖业务逻辑,纯 Svelte + Vite。构建产物是静态文件,可部署到任意静态托管(本项目部署在 Cloudflare Pages)。
+
+## 隐私
+
+- ✅ **零网络层** —— 没有任何 `fetch` / 网络请求,数据从不离开设备。
+- ✅ 无账号、无云、无埋点、无分析。
+- ✅ 系统字体(无外链字体文件)。
+- ⚠️ 数据存浏览器 localStorage:清浏览器数据会清掉它,导出 JSON 是你的备份通道。
+
+## 许可
+
+**MIT License + [Commons Clause](https://commonsclause.com/)** —— 源码公开,允许自由使用、修改、学习、非商业分发,但不得出售本软件。详见 [LICENSE](LICENSE)。与 [iOS 版](https://github.com/coni555/FreeGrid-Freedom) 同。
