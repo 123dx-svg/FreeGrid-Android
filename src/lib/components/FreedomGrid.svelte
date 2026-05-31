@@ -40,11 +40,31 @@
   .cell.blue {
     background: var(--asset-blue);
   }
-  /* 当前格:提亮 + 同色辉光,呼应 iOS 发光当前格 */
+  /* 当前格:呼吸动画(scale + 白辉光脉动),移植 iOS LifeGrid 呼吸格。
+     纯 CSS keyframes —— 不依赖 JS,不会像 iOS repeatForever 那样冻结。 */
   .cell.current {
-    filter: brightness(1.5) saturate(0.7);
-    box-shadow: 0 0 10px 2px color-mix(in srgb, var(--asset-blue) 70%, white);
     position: relative;
     z-index: 1;
+    animation: breathe 2.6s ease-in-out infinite;
+  }
+  @keyframes breathe {
+    0%,
+    100% {
+      filter: brightness(1.2);
+      transform: scale(1);
+      box-shadow: 0 0 5px 1px rgba(255, 255, 255, 0.35);
+    }
+    50% {
+      filter: brightness(1.75);
+      transform: scale(1.14);
+      box-shadow: 0 0 14px 4px rgba(255, 255, 255, 0.7);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .cell.current {
+      animation: none;
+      filter: brightness(1.5);
+      box-shadow: 0 0 10px 2px rgba(255, 255, 255, 0.5);
+    }
   }
 </style>

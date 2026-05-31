@@ -1,5 +1,6 @@
 <script lang="ts">
   import { store, deleteTransaction } from "./store.svelte";
+  import Sheet from "./components/Sheet.svelte";
 
   // ── 数据:中央响应式 store,本屏只做合并/排序/分组,不碰任何 freedom-math ──
   // 归一成扁平交易形状,行模板单分支即可
@@ -65,6 +66,62 @@
     return list.slice().sort((a, b) => b.date.getTime() - a.date.getTime());
   });
 
+  // ── 月度汇总 sheet ──
+  let showMonthly = $state(false);
+
+  // 按 YYYY-MM 分组聚合(支出/收入/净),新月在前;月内取前 2 大支出分类。
+  // 对齐 iOS MonthlySummaryView.monthlyStats,但只保留概览(无展开/进度条/百分比)。
+  type MonthlyStat = {
+    key: string; // "2026-05"
+    label: string; // "2026 年 5 月"
+    totalExpense: number;
+    totalIncome: number;
+    net: number;
+    topCategories: { category: string; total: number }[]; // 月内支出 top 2,降序
+  };
+  const monthlyStats = $derived.by<MonthlyStat[]>(() => {
+    const monthKey = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const expByMonth = new Map<string, Map<string, number>>(); // 月 → (分类 → 额)
+    const incByMonth = new Map<string, number>();
+    const keys = new Set<string>();
+
+    for (const e of store.expenses) {
+      const k = monthKey(e.date);
+      keys.add(k);
+      const cats = expByMonth.get(k) ?? new Map<string, number>();
+      cats.set(e.category, (cats.get(e.category) ?? 0) + e.amount);
+      expByMonth.set(k, cats);
+    }
+    for (const i of store.incomes) {
+      const k = monthKey(i.date);
+      keys.add(k);
+      incByMonth.set(k, (incByMonth.get(k) ?? 0) + i.amount);
+    }
+
+    // YYYY-MM 字符串降序 = 新月在前
+    return [...keys]
+      .sort((a, b) => (a < b ? 1 : a > b ? -1 : 0))
+      .map((k) => {
+        const cats = expByMonth.get(k) ?? new Map<string, number>();
+        const totalExpense = [...cats.values()].reduce((s, v) => s + v, 0);
+        const totalIncome = incByMonth.get(k) ?? 0;
+        const topCategories = [...cats.entries()]
+          .map(([category, total]) => ({ category, total }))
+          .sort((a, b) => b.total - a.total)
+          .slice(0, 2);
+        const [y, m] = k.split("-");
+        return {
+          key: k,
+          label: `${y} 年 ${Number(m)} 月`,
+          totalExpense,
+          totalIncome,
+          net: totalIncome - totalExpense,
+          topCategories,
+        };
+      });
+  });
+
   // ── 派生:汇总行 ──
   const count = $derived(filteredTransactions.length);
   const net = $derived(
@@ -84,6 +141,10 @@
   function netDisplay(v: number): string {
     // 净额始终 --ink,只用 +/− 前缀表方向(对齐 iOS netDisplay)
     return (v >= 0 ? "+¥" : "−¥") + money(Math.abs(v));
+  }
+  function netDisplay0(v: number): string {
+    // 月卡专用:总支出/总收入用 nf0(整数),净额跟齐整数口径才能对账(对齐 iOS signed() 的 0 位小数)
+    return (v >= 0 ? "+¥" : "−¥") + nf0.format(Math.abs(v));
   }
   function fmtDate(d: Date): string {
     // 中文自然日,对齐 iOS .dateTime.year().month().day() 在 zh 设备上的渲染
@@ -114,7 +175,7 @@
       <p class="kicker">HISTORY · 流水</p>
       <h1>History</h1>
     </div>
-    <button class="cal-btn" aria-label="月度汇总" title="月度汇总">
+    <button class="cal-btn" aria-label="月度汇总" title="月度汇总" onclick={() => (showMonthly = true)}>
       <svg viewBox="0 0 24 24" class="cal-ic">
         <rect x="3" y="4.5" width="18" height="16" rx="2.5" />
         <path d="M3 9h18M8 2.5v4M16 2.5v4" />
@@ -196,6 +257,47 @@
       {/each}
     </ul>
   {/if}
+
+  <!-- ───── 月度汇总 sheet(只读) ───── -->
+  <Sheet open={showMonthly} title="月度汇总" onClose={() => (showMonthly = false)}>
+    {#if monthlyStats.length === 0}
+      <div class="ms-empty">
+        <svg viewBox="0 0 24 24" class="ms-empty-ic">
+          <rect x="3" y="4.5" width="18" height="16" rx="2.5" />
+          <path d="M3 9h18M8 2.5v4M16 2.5v4" />
+        </svg>
+        <p class="ms-empty-title">还没有可汇总的记录</p>
+      </div>
+    {:else}
+      <div class="ms-list">
+        {#each monthlyStats as ms (ms.key)}
+          <div class="ms-card">
+            <div class="ms-head">
+              <span class="ms-month">{ms.label}</span>
+              <span class="ms-net num">净 {netDisplay0(ms.net)}</span>
+            </div>
+            <div class="ms-stats">
+              <div class="ms-stat">
+                <span class="ms-stat-label">总支出</span>
+                <span class="ms-stat-amt num expense">¥{nf0.format(ms.totalExpense)}</span>
+              </div>
+              <div class="ms-stat">
+                <span class="ms-stat-label">总收入</span>
+                <span class="ms-stat-amt num income">¥{nf0.format(ms.totalIncome)}</span>
+              </div>
+            </div>
+            {#if ms.topCategories.length > 0}
+              <div class="ms-cats num">
+                {#each ms.topCategories as c (c.category)}
+                  <span class="ms-cat">{c.category} ¥{nf0.format(c.total)}</span>
+                {/each}
+              </div>
+            {/if}
+          </div>
+        {/each}
+      </div>
+    {/if}
+  </Sheet>
 </div>
 
 <style>
@@ -443,6 +545,98 @@
     margin: var(--sp-sm) 0 0;
   }
   .empty-sub {
+    font-size: 14px;
+    color: var(--ink-muted);
+    margin: 0;
+  }
+
+  /* ── 月度汇总 sheet ── */
+  .ms-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-md);
+  }
+  .ms-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-sm);
+    padding: var(--sp-md) var(--sp-lg);
+    border-radius: 12px;
+    border: 1px solid var(--hairline-soft);
+    background: var(--mist2);
+  }
+  .ms-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--sp-sm);
+  }
+  .ms-month {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--ink);
+  }
+  .ms-net {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--ink);
+  }
+  .ms-stats {
+    display: flex;
+    gap: var(--sp-2xl);
+  }
+  .ms-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .ms-stat-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    color: var(--ink-faint);
+  }
+  .ms-stat-amt {
+    font-size: 20px;
+    font-weight: 500;
+  }
+  .ms-stat-amt.expense {
+    color: var(--flame);
+  }
+  .ms-stat-amt.income {
+    color: var(--sky-deep);
+  }
+  .ms-cats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-md);
+    padding-top: var(--sp-xs);
+    border-top: 1px solid var(--hairline-soft);
+  }
+  .ms-cat {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.03em;
+    color: var(--ink-muted);
+  }
+  .ms-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sp-sm);
+    padding: var(--sp-2xl) 0;
+    text-align: center;
+  }
+  .ms-empty-ic {
+    width: 32px;
+    height: 32px;
+    fill: none;
+    stroke: var(--ink-faint);
+    stroke-width: 1.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .ms-empty-title {
     font-size: 14px;
     color: var(--ink-muted);
     margin: 0;

@@ -4,9 +4,12 @@
   // 数据源 = 中央响应式 store;所有派生量 $derived,store 变更后屏即时刷新。
   // 交互:调拨写库、导出 CSV/JSON、从 JSON 导入、清空 —— 均落真实 store 操作。
   import { deriveDashboard } from "./derive";
+  import Sheet from "./components/Sheet.svelte";
   import {
     store,
     transfer,
+    updateBucket,
+    addPassiveSource,
     deletePassiveSource,
     importBackup,
     clearAll,
@@ -43,6 +46,66 @@
     transfer(Number(transferAmount), transferDir === "cashToAssets");
     transferAmount = "";
   }
+
+  // ── 编辑资产 / 现金桶(prefill 在 open 时取最新值,避免捕获旧值)──
+  let showEditLocked = $state(false);
+  let editLockedAmount = $state("");
+  const editLockedValid = $derived.by(() => {
+    if (editLockedAmount.trim() === "") return false;
+    const v = Number(editLockedAmount);
+    return Number.isFinite(v) && v >= 0; // 桶是绝对值,0 合法
+  });
+  function openEditLocked() {
+    editLockedAmount = String(Math.round(store.assets.lockedAssets));
+    showEditLocked = true;
+  }
+  function saveEditLocked() {
+    if (!editLockedValid) return;
+    updateBucket("locked", Number(editLockedAmount));
+    showEditLocked = false;
+  }
+
+  let showEditCash = $state(false);
+  let editCashAmount = $state("");
+  const editCashValid = $derived.by(() => {
+    if (editCashAmount.trim() === "") return false;
+    const v = Number(editCashAmount);
+    return Number.isFinite(v) && v >= 0;
+  });
+  function openEditCash() {
+    editCashAmount = String(Math.round(store.assets.cash));
+    showEditCash = true;
+  }
+  function saveEditCash() {
+    if (!editCashValid) return;
+    updateBucket("cash", Number(editCashAmount));
+    showEditCash = false;
+  }
+
+  // ── 添加被动收入源 ──
+  let showAddPassive = $state(false);
+  let passiveName = $state("");
+  let passiveMonthly = $state("");
+  const passiveValid = $derived.by(() => {
+    const v = Number(passiveMonthly);
+    return passiveName.trim() !== "" && Number.isFinite(v) && v > 0;
+  });
+  function openAddPassive() {
+    passiveName = "";
+    passiveMonthly = "";
+    showAddPassive = true;
+  }
+  function saveAddPassive() {
+    if (!passiveValid) return;
+    addPassiveSource(passiveName.trim(), Number(passiveMonthly));
+    showAddPassive = false;
+    passiveName = "";
+    passiveMonthly = "";
+  }
+  const passiveDailyPreview = $derived.by(() => {
+    const v = Number(passiveMonthly);
+    return Number.isFinite(v) && v > 0 ? (v / 30).toFixed(1) : null;
+  });
 
   // ── 数据管理:导出 / 导入 / 清空 ──
   function download(text: string, filename: string, mime: string) {
@@ -122,11 +185,11 @@
               </svg>
             </span>
             <span class="kicker">资产</span>
-            <span class="pencil" aria-hidden="true">
+            <button class="pencil" aria-label="编辑资产" onclick={openEditLocked}>
               <svg viewBox="0 0 24 24" width="13" height="13">
                 <path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25ZM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83Z"/>
               </svg>
-            </span>
+            </button>
           </div>
           <div class="bucket-amount num">{yuan(vm.lockedAssets)}</div>
         </section>
@@ -139,11 +202,11 @@
               </svg>
             </span>
             <span class="kicker">现金</span>
-            <span class="pencil" aria-hidden="true">
+            <button class="pencil" aria-label="编辑现金" onclick={openEditCash}>
               <svg viewBox="0 0 24 24" width="13" height="13">
                 <path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25ZM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83Z"/>
               </svg>
-            </span>
+            </button>
           </div>
           <div class="bucket-amount num">{yuan(vm.cash)}</div>
         </section>
@@ -155,7 +218,7 @@
       <section class="vault-card passive">
         <div class="passive-head">
           <span class="kicker">PASSIVE · 被动收入</span>
-          <button class="add-btn" aria-label="添加被动收入源">
+          <button class="add-btn" aria-label="添加被动收入源" onclick={openAddPassive}>
             <svg viewBox="0 0 24 24" width="13" height="13">
               <path fill="currentColor" d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2h6Z"/>
             </svg>
@@ -302,6 +365,69 @@
       清空所有数据
     </button>
   </section>
+
+  <!-- ───── 编辑资产 ───── -->
+  <Sheet open={showEditLocked} title="编辑资产" onClose={() => (showEditLocked = false)}>
+    <div class="fg-field">
+      <label class="fg-label" for="edit-locked-input">新金额(元)</label>
+      <input
+        id="edit-locked-input"
+        class="fg-input fg-amount num"
+        type="text"
+        inputmode="decimal"
+        placeholder="0"
+        bind:value={editLockedAmount}
+      />
+      <p class="sheet-hint">锁定的钱 — 定期 / 股票 / 基金 / 不动产等</p>
+    </div>
+    <button class="fg-btn" disabled={!editLockedValid} onclick={saveEditLocked}>确认</button>
+  </Sheet>
+
+  <!-- ───── 编辑现金 ───── -->
+  <Sheet open={showEditCash} title="编辑现金" onClose={() => (showEditCash = false)}>
+    <div class="fg-field">
+      <label class="fg-label" for="edit-cash-input">新金额(元)</label>
+      <input
+        id="edit-cash-input"
+        class="fg-input fg-amount num"
+        type="text"
+        inputmode="decimal"
+        placeholder="0"
+        bind:value={editCashAmount}
+      />
+      <p class="sheet-hint">可花的钱 — 活期 / 钱包余额 / 微信支付宝</p>
+    </div>
+    <button class="fg-btn" disabled={!editCashValid} onclick={saveEditCash}>确认</button>
+  </Sheet>
+
+  <!-- ───── 添加被动收入 ───── -->
+  <Sheet open={showAddPassive} title="添加被动收入" onClose={() => (showAddPassive = false)}>
+    <div class="fg-field">
+      <label class="fg-label" for="passive-name-input">名称</label>
+      <input
+        id="passive-name-input"
+        class="fg-input"
+        type="text"
+        placeholder="房租 / 股息 / 版税…"
+        bind:value={passiveName}
+      />
+    </div>
+    <div class="fg-field">
+      <label class="fg-label" for="passive-monthly-input">月入(元 / 月)</label>
+      <input
+        id="passive-monthly-input"
+        class="fg-input fg-amount num"
+        type="text"
+        inputmode="decimal"
+        placeholder="0"
+        bind:value={passiveMonthly}
+      />
+      {#if passiveDailyPreview}
+        <p class="sheet-hint moss">≈ ¥{passiveDailyPreview} / 天</p>
+      {/if}
+    </div>
+    <button class="fg-btn" disabled={!passiveValid} onclick={saveAddPassive}>添加</button>
+  </Sheet>
 </div>
 
 <style>
@@ -385,7 +511,28 @@
   .pencil {
     margin-left: auto;
     display: inline-flex;
+    align-items: center;
     color: var(--ink-faint);
+    background: transparent;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    transition: color 0.15s ease;
+  }
+  .pencil:hover {
+    color: var(--ink);
+  }
+
+  /* ── sheet 内提示 ── */
+  .sheet-hint {
+    font-size: 12px;
+    color: var(--ink-faint);
+    margin: 6px 0 0;
+    line-height: 1.5;
+  }
+  .sheet-hint.moss {
+    color: var(--moss);
+    font-family: var(--font-mono);
   }
   .bucket-amount {
     font-size: 26px;
