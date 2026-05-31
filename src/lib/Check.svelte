@@ -70,8 +70,6 @@
       {/each}
     </section>
   </div>
-
-  <p class="footnote">自检规则源自早期 web 版 · 数据从记录自动反推,不需手动勾选</p>
 </div>
 
 <style>
@@ -229,14 +227,6 @@
   }
   .row-status.done {
     color: var(--sky-deep);
-  }
-
-  /* ── footnote ── */
-  .footnote {
-    font-size: 12px;
-    color: var(--ink-faint);
-    text-align: center;
-    margin: var(--sp-xs) 0 0;
   }
 
   @media (max-width: 820px) {
