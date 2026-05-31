@@ -9,7 +9,7 @@
 - 四屏(Dashboard/Assets/History/Check)+ 真持久化(localStorage)+ 导入 iOS 导出的 JSON + 录入弹窗(记支出/收入/模拟/改桶/加被动)+ 月度汇总下钻 + 流星/呼吸动画。**能在电脑/手机网页真正记账**。
 - 数据流:`store.svelte.ts`(响应式中央 store,localStorage 持久化,codec = iOS `BackupJSON` snake_case)→ 四屏 `$derived` 读 store。引擎 `freedom-math.ts`(14 vitest)。
 - push `origin/main` → CF 自动构建部署(约 1-2 分钟)。本地 `npm run dev` 开发 / `npm run build` 出 `dist`。
-- **下一步候选**:格子级联动画(记账时点亮/熄灭)· 统一页面大标题语言(Dashboard/Check 中文 vs Assets/History 英文)· Tauri 套桌面壳 · 自定义域名 freegrid.conilab.cn。
+- **下一步候选**:Dashboard 记账时格子级联(模拟决策的格子推演已做,见下;这里指真实记账后 LifeGrid 即时点亮/熄灭)· 统一页面大标题语言(Dashboard/Check 中文 vs Assets/History 英文)· Tauri 套桌面壳 · 自定义域名 freegrid.conilab.cn。
 
 ## 形态与栈(已定)
 
@@ -39,7 +39,12 @@
 - [x] **真持久化 + 导入(让它真能用)**:`store.svelte.ts` 响应式中央 store + localStorage(序列化格式 = BackupJSON,一份 codec 三用:本地存/导入 iOS/导出)。四屏改读 store($derived 全响应)。**已端到端验证**:导入 JSON → 四屏实时更新 → 刷新不丢 → 分类归一(shopping→购物)→ ∞ 态。已接:导入/导出 JSON+CSV/清空/调拨/删除。修了 ∞ 态网格画爆 bug(gridState 统一切分 count)+ ∞ 网格单位标签
 - [x] **输入 Sheet 全做完**(workflow 并行):共享 `components/Sheet.svelte`(遮罩+卡片,ESC/点外关,`wide` 变体)+ app.css `.fg-*` 表单控件。记支出/记收入/模拟决策(实时 before→after,对齐 iOS outcome)/ 编辑资产桶/现金桶 / 加被动源 + 列表删除。记支出端到端验过(填→校验→提交→入库→持久化)
 - [x] **月度汇总 + 下钻**(History 日历入口):宽版 Sheet,点任意月份展开看当月每一笔明细
-- [x] **动画**:hero 流星层(暗色 CSS keyframes)+ LifeGrid 当前格呼吸(scale+辉光脉动),均带 prefers-reduced-motion 兜底。格子级联(记账时点亮/熄灭)仍待做
+- [x] **动画**:hero 流星层(暗色 CSS keyframes)+ LifeGrid 当前格呼吸(scale+辉光脉动),均带 prefers-reduced-motion 兜底。
+- [x] **体验改造 3 处(2026-05-31 续)** — 对照 iOS 源码:
+      · **呼吸调暗**:旧 `filter:brightness(1.75)` + 14px 白阴影峰值逼近全白 → 砍 bloom(亮度峰 1.1 + 白阴影收紧 3→7px/低透明度,scale 保留),不再刺眼。`FreedomGrid.svelte`
+      · **模拟决策格子推演**(移植 iOS SimDemoGrid/gridDemoCard):干巴「当前X→Y Δ」→ 戴维斯三杀表(支出 KILL1净值/KILL2日均/KILL3自由天数;收入 GAIN1/GAIN2)+ 级联熄灭/点亮动画(rAF 喂纯函数 elapsed,idle/playing/done 三态)+ 演示/重播按钮。纯函数层 `sim-demo.ts`,组件 `components/SimDemoGrid.svelte`,弹窗加 `wide`。∞→0 走 iOS 行为(KILL3 显「—」但格子照样 99→0)
+      · **月度分类占比条**(移植 iOS MonthlySummaryView.categoryRow):展开月在「逐笔明细」之上加全量分类条(名 / 横条 width=total/maxCat / 额 / pct=total/月总),明细保留。`History.svelte`
+      · 验证:dev preview 实跑(暗/亮 × 桌面/移动 × 有限/∞ 路径 × 抓到中途级联帧确认真动),check 0 错 + 14 vitest 通过
 - [x] **体验打磨 3 处**:color-scheme 跟主题(原生 date picker/select/滚动条暗色)/ Assets 拆两列改单列纵向流(被动多了不再散乱)/ 月度 Sheet 加宽 + 遮罩调暗(93%+blur10)
 - [x] **PWA**(vite-plugin-pwa:manifest + autoUpdate SW + precache,可离线 + 添加到主屏)+ 系统字体(零外链)+ index.html PWA meta + 图标 192/512/maskable
 - [x] **GitHub 公开仓库**:[coni555/FreeGrid-Web](https://github.com/coni555/FreeGrid-Web)(README+LICENSE+topics,curl 直连建仓绕 gh 代理)

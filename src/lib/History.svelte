@@ -69,15 +69,15 @@
   // ── 月度汇总 sheet ──
   let showMonthly = $state(false);
 
-  // 按 YYYY-MM 分组聚合(支出/收入/净),新月在前;月内取前 2 大支出分类。
-  // 对齐 iOS MonthlySummaryView.monthlyStats,但只保留概览(无展开/进度条/百分比)。
+  // 按 YYYY-MM 分组聚合(支出/收入/净),新月在前;月内全量支出分类(降序)。
+  // 对齐 iOS MonthlySummaryView.monthlyStats:展开看占比条 + 百分比(本屏再叠加逐笔明细)。
   type MonthlyStat = {
     key: string; // "2026-05"
     label: string; // "2026 年 5 月"
     totalExpense: number;
     totalIncome: number;
     net: number;
-    topCategories: { category: string; total: number }[]; // 月内支出 top 2,降序
+    categories: { category: string; total: number }[]; // 月内支出全量分类,降序
   };
   const monthlyStats = $derived.by<MonthlyStat[]>(() => {
     const monthKey = (d: Date) =>
@@ -106,10 +106,9 @@
         const cats = expByMonth.get(k) ?? new Map<string, number>();
         const totalExpense = [...cats.values()].reduce((s, v) => s + v, 0);
         const totalIncome = incByMonth.get(k) ?? 0;
-        const topCategories = [...cats.entries()]
+        const categories = [...cats.entries()]
           .map(([category, total]) => ({ category, total }))
-          .sort((a, b) => b.total - a.total)
-          .slice(0, 2);
+          .sort((a, b) => b.total - a.total);
         const [y, m] = k.split("-");
         return {
           key: k,
@@ -117,7 +116,7 @@
           totalExpense,
           totalIncome,
           net: totalIncome - totalExpense,
-          topCategories,
+          categories,
         };
       });
   });
@@ -302,14 +301,34 @@
                 <span class="ms-stat-amt num income">¥{nf0.format(ms.totalIncome)}</span>
               </div>
             </div>
-            {#if ms.topCategories.length > 0}
+            {#if !isOpen && ms.categories.length > 0}
               <div class="ms-cats num">
-                {#each ms.topCategories as c (c.category)}
+                {#each ms.categories.slice(0, 2) as c (c.category)}
                   <span class="ms-cat">{c.category} ¥{nf0.format(c.total)}</span>
                 {/each}
               </div>
             {/if}
             {#if isOpen}
+              {#if ms.categories.length > 0}
+                {@const maxCat = ms.categories[0].total}
+                <div class="ms-breakdown">
+                  {#each ms.categories as c (c.category)}
+                    <div class="ms-bar-row">
+                      <span class="ms-bar-name">{c.category}</span>
+                      <span class="ms-bar-track">
+                        <span
+                          class="ms-bar-fill"
+                          style="width:{maxCat > 0 ? `max(4px, ${(c.total / maxCat) * 100}%)` : '4px'}"
+                        ></span>
+                      </span>
+                      <span class="ms-bar-amt num">¥{nf0.format(c.total)}</span>
+                      <span class="ms-bar-pct num">
+                        {ms.totalExpense > 0 ? Math.round((c.total / ms.totalExpense) * 100) : 0}%
+                      </span>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
               <div class="ms-detail">
                 {#each monthTxs(ms.key) as t (t.id)}
                   <div class="ms-tx">
@@ -672,6 +691,54 @@
     font-size: 11px;
     letter-spacing: 0.03em;
     color: var(--ink-muted);
+  }
+  /* 月内分类占比条(移植 iOS MonthlySummaryView.categoryRow):名 / 横条 / 额 / % */
+  .ms-breakdown {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-sm);
+    margin-top: var(--sp-sm);
+    padding-top: var(--sp-md);
+    border-top: 1px solid var(--hairline-soft);
+  }
+  .ms-bar-row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-sm);
+  }
+  .ms-bar-name {
+    font-size: 13px;
+    color: var(--ink-muted);
+    flex: 0 0 56px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ms-bar-track {
+    flex: 1;
+    height: 8px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--ink) 8%, transparent);
+    overflow: hidden;
+  }
+  .ms-bar-fill {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: var(--asset-blue);
+  }
+  .ms-bar-amt {
+    font-size: 13px;
+    color: var(--ink);
+    flex: 0 0 64px;
+    text-align: right;
+  }
+  .ms-bar-pct {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+    flex: 0 0 36px;
+    text-align: right;
   }
   .ms-hint {
     font-size: 12px;

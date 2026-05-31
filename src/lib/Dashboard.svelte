@@ -1,11 +1,13 @@
 <script lang="ts">
   import { store, addExpense, addIncome } from "./store.svelte";
   import { deriveDashboard } from "./derive";
-  import { freedomUnitLabel, freedomDays, freedomDaysDisplay, freedomDaysUnit } from "./freedom-math";
+  import { freedomUnitLabel, freedomDaysDisplay, GRID_UNIT_META } from "./freedom-math";
+  import { simOutcome, gridUnitFor, cellCountFor, blueCellsFor, simDemoTiming } from "./sim-demo";
   import { EXPENSE_CATEGORIES } from "./models";
   import Sheet from "./components/Sheet.svelte";
   import Sparkline from "./components/Sparkline.svelte";
   import FreedomGrid from "./components/FreedomGrid.svelte";
+  import SimDemoGrid from "./components/SimDemoGrid.svelte";
 
   const now = new Date();
   // 响应式:store 变(导入/记账/删除)→ vm 及所有派生量自动重算
@@ -66,26 +68,98 @@
   let simAmount = $state<number | null>(null);
   const simValid = $derived((simAmount ?? 0) > 0);
 
-  // 实时推演:同 iOS outcome() — 支出抬日均、降净值;收入只加净值。
-  const simAfter = $derived.by(() => {
-    const x = simAmount ?? 0;
-    if (x <= 0) return vm.freedomDays; // 无效输入:维持现状(对齐 iOS hintCard)
+  // 一次模拟的完整结果(KILL/GAIN 表 + 格子推演共用一份,保证数字一致)
+  const simOut = $derived(
+    simOutcome({
+      lockedAssets: vm.lockedAssets,
+      cash: vm.cash,
+      totalExpenses: vm.totalExpenses,
+      trackDays: vm.trackDays,
+      dailyPassive: vm.dailyPassive,
+      amount: simAmount ?? 0,
+      mode: simMode,
+    })
+  );
+
+  // 金额格式化(千分位 + 指定精度,对齐 iOS formatYuan)
+  const yuan = (v: number, p = 0) =>
+    "¥" + new Intl.NumberFormat("en-US", { minimumFractionDigits: p, maximumFractionDigits: p }).format(v);
+
+  // 戴维斯三杀 / 自由增长 影响行(对齐 iOS expensePreview / incomePreview)
+  type KillRow = { label: string; from: string; to: string; delta: string };
+  const killRows = $derived.by<KillRow[]>(() => {
+    const o = simOut;
+    const amt = simAmount ?? 0;
     if (simMode === "expense") {
-      const newDailyBurn = (vm.totalExpenses + x) / vm.trackDays;
-      return freedomDays(vm.netWorth - x, newDailyBurn, vm.dailyPassive);
+      const loss = Number.isFinite(o.currentFreedom) ? o.currentFreedom - o.newFreedom : 0;
+      return [
+        { label: "KILL 1 净值", from: yuan(o.currentNW), to: yuan(o.newNW), delta: "−" + yuan(amt) },
+        {
+          label: "KILL 2 日均",
+          from: yuan(o.currentAvg, 1),
+          to: yuan(o.newAvg, 2),
+          delta: "+" + yuan(o.newAvg - o.currentAvg, 2),
+        },
+        {
+          label: "KILL 3 自由天数",
+          from: freedomDaysDisplay(o.currentFreedom),
+          to: freedomDaysDisplay(o.newFreedom),
+          delta: Number.isFinite(o.currentFreedom) ? "−" + Math.round(loss) + " 天" : "—",
+        },
+      ];
     }
-    return freedomDays(vm.netWorth + x, vm.dailyBurn, vm.dailyPassive);
+    const gain =
+      Number.isFinite(o.currentFreedom) && Number.isFinite(o.newFreedom) ? o.newFreedom - o.currentFreedom : 0;
+    return [
+      { label: "GAIN 1 净值", from: yuan(o.currentNW), to: yuan(o.newNW), delta: "+" + yuan(amt) },
+      {
+        label: "GAIN 2 自由天数",
+        from: freedomDaysDisplay(o.currentFreedom),
+        to: freedomDaysDisplay(o.newFreedom),
+        delta:
+          Number.isFinite(o.currentFreedom) && Number.isFinite(o.newFreedom) ? "+" + Math.round(gain) + " 天" : "—",
+      },
+    ];
   });
-  // delta:两端任一为 ∞ → "—"(对齐 iOS,floor(∞) 会算出 NaN/-Infinity)
-  const simBothFinite = $derived(Number.isFinite(vm.freedomDays) && Number.isFinite(simAfter));
-  const simDelta = $derived(Math.trunc(simAfter) - Math.trunc(vm.freedomDays));
-  const simNegative = $derived(simBothFinite && simDelta < 0);
-  // before/after 各自带正确单位标签(跟 Hero 一样,数字档位由 freedomDaysDisplay 决定,标签须跟上)
-  const simBeforeUnit = $derived(freedomUnitLabel(vm.unit));
-  const simAfterUnit = $derived(freedomUnitLabel(freedomDaysUnit(simAfter)));
+
+  // 格子推演:锁定"当前态"档位渲染两态(对齐 iOS gridDemoCard)
+  const simGridUnit = $derived(gridUnitFor(simOut.currentFreedom));
+  const simOldCount = $derived(cellCountFor(simOut.currentFreedom, simGridUnit));
+  const simNewCount = $derived(cellCountFor(simOut.newFreedom, simGridUnit));
+  const simOldBlue = $derived(blueCellsFor(simOldCount, simOut.lockedAssets, simOut.currentNW));
+  const simNewBlue = $derived(blueCellsFor(simNewCount, simOut.lockedAssets, simOut.newNW));
+  const simCellDelta = $derived(Math.abs(simNewCount - simOldCount));
+  const simGridUnitLabel = $derived(GRID_UNIT_META[simGridUnit].label);
+
+  // 演示三态(idle/playing/done)+ 触发
+  let demoPhase = $state<"idle" | "playing" | "done">("idle");
+  // 金额或模式一变 → 回到静止态,让用户重新观察这一笔(对齐 iOS .onChange)
+  $effect(() => {
+    void simAmount;
+    void simMode;
+    demoPhase = "idle";
+  });
+  function playDemo() {
+    demoPhase = "playing";
+    const total = simDemoTiming(simCellDelta, simMode === "income").total;
+    setTimeout(() => {
+      if (demoPhase === "playing") demoPhase = "done";
+    }, (total + 0.05) * 1000);
+  }
+  const demoBtnLabel = $derived(
+    demoPhase === "playing"
+      ? "推演中…"
+      : demoPhase === "done"
+        ? "重播"
+        : simMode === "expense"
+          ? "演示这笔熄灭哪几格"
+          : "演示这笔点亮哪几格"
+  );
+
   function resetSim() {
     simMode = "expense";
     simAmount = null;
+    demoPhase = "idle";
   }
 
   const unitLabel = $derived(freedomUnitLabel(vm.unit));
@@ -271,6 +345,7 @@
 <Sheet
   open={showSim}
   title="模拟决策"
+  wide
   onClose={() => {
     showSim = false;
     resetSim();
@@ -299,23 +374,58 @@
   </div>
 
   {#if simValid}
-    <div class="sim-preview">
-      <span class="kicker">自由天数预览</span>
-      <div class="sim-row num">
-        当前 {vm.freedomDaysDisplay} {simBeforeUnit} → {freedomDaysDisplay(simAfter)} {simAfterUnit}
-      </div>
-      <div class="sim-delta num" class:neg={simNegative}>
-        {#if simBothFinite}
-          Δ {simDelta > 0 ? "+" : ""}{simDelta} 天
-        {:else}
-          Δ —
-        {/if}
+    <!-- 戴维斯三杀 / 自由增长 预览 -->
+    <div class="sim-card" class:income={simMode === "income"}>
+      <span class="kicker">{simMode === "expense" ? "戴维斯三杀预览" : "自由增长预览"}</span>
+      <div class="kill-rows">
+        {#each killRows as r (r.label)}
+          <div class="kill-row">
+            <span class="kicker">{r.label}</span>
+            <div class="kill-body">
+              <span class="kill-fromto num">{r.from} → {r.to}</span>
+              <span class="kill-delta num">{r.delta}</span>
+            </div>
+          </div>
+        {/each}
       </div>
       <p class="sim-caption">
-        {simMode === "expense"
-          ? "一笔支出净值降、日均升 — 这就是「戴维斯三杀」的体感。"
-          : "一笔收入直接给自由天数回血。"}
+        {simMode === "expense" ? "这笔消费对自由天数的传导效应。" : "这笔收入对自由天数的回血效应。"}
       </p>
+    </div>
+
+    <!-- 格子推演 -->
+    <div class="sim-card">
+      <div class="demo-head">
+        <span class="kicker">格子推演</span>
+        <span class="demo-range num">{simOldCount} → {simNewCount} {simGridUnitLabel}</span>
+      </div>
+      {#if simCellDelta === 0}
+        <p class="demo-zero">
+          {simMode === "expense"
+            ? "不足一格 —— 还在当日预算内,这笔不削自由。"
+            : "不足一格 —— 这笔还不够点亮一格自由。"}
+        </p>
+      {:else}
+        <div class="demo-wrap">
+          <SimDemoGrid
+            unit={simGridUnit}
+            oldCount={simOldCount}
+            newCount={simNewCount}
+            oldBlue={simOldBlue}
+            newBlue={simNewBlue}
+            phase={demoPhase}
+          />
+        </div>
+        <div class="demo-cap">
+          <span class="demo-dot" class:flame={simMode === "expense"}></span>
+          {simMode === "expense"
+            ? `熄灭 ${simCellDelta} 格 · 每格 1 ${simGridUnitLabel}自由`
+            : `点亮 ${simCellDelta} 格 · 每格 1 ${simGridUnitLabel}自由`}
+        </div>
+        <button class="demo-btn" class:flame={simMode === "expense"} disabled={demoPhase === "playing"} onclick={playDemo}>
+          {demoBtnLabel}
+        </button>
+      {/if}
     </div>
   {:else}
     <p class="sim-hint">输入金额 · 实时看决策影响</p>
@@ -592,33 +702,111 @@
     padding: 10px 12px;
     margin: 0 0 var(--sp-lg);
   }
-  .sim-preview {
+  /* 模拟预览卡(戴维斯三杀 / 格子推演 共用底座) */
+  .sim-card {
     display: flex;
     flex-direction: column;
-    gap: var(--sp-sm);
+    gap: var(--sp-md);
     background: var(--mist2);
     border: 1px solid var(--hairline);
     border-radius: 14px;
     padding: var(--sp-lg);
     margin-top: var(--sp-sm);
   }
-  .sim-row {
-    font-size: 18px;
+  .kill-rows {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-md);
+  }
+  .kill-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .kill-body {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--sp-md);
+  }
+  .kill-fromto {
+    font-family: var(--font-mono);
+    font-size: 14px;
     color: var(--ink);
-    font-family: var(--font-mono);
   }
-  .sim-delta {
-    font-size: 15px;
+  .kill-delta {
     font-family: var(--font-mono);
-    color: var(--sky-deep);
-  }
-  .sim-delta.neg {
+    font-size: 14px;
+    font-weight: 500;
     color: var(--flame);
+    white-space: nowrap;
+  }
+  .sim-card.income .kill-delta {
+    color: var(--sky-deep);
   }
   .sim-caption {
     font-size: 12px;
     color: var(--ink-faint);
     margin: 2px 0 0;
+  }
+  /* 格子推演 */
+  .demo-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  .demo-range {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    color: var(--ink-faint);
+  }
+  .demo-zero {
+    font-size: 14px;
+    color: var(--ink-muted);
+    margin: var(--sp-xs) 0;
+  }
+  .demo-wrap {
+    padding: var(--sp-xs) 0;
+  }
+  .demo-cap {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    color: var(--ink-faint);
+  }
+  .demo-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: var(--sky-deep);
+    flex: 0 0 7px;
+  }
+  .demo-dot.flame {
+    background: var(--flame);
+  }
+  .demo-btn {
+    font-family: var(--font-rounded);
+    font-size: 14px;
+    padding: 11px 16px;
+    border-radius: 999px;
+    background: transparent;
+    border: 1px solid color-mix(in srgb, var(--sky-deep) 55%, var(--hairline));
+    color: var(--sky-deep);
+    cursor: pointer;
+    transition: background 0.15s ease, opacity 0.15s ease;
+  }
+  .demo-btn.flame {
+    color: var(--flame);
+    border-color: color-mix(in srgb, var(--flame) 55%, var(--hairline));
+  }
+  .demo-btn:hover:not(:disabled) {
+    background: var(--mist);
+  }
+  .demo-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
   .sim-hint {
     text-align: center;
