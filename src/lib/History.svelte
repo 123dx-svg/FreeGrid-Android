@@ -1,0 +1,474 @@
+<script lang="ts">
+  import { makeDemoData } from "./demo";
+
+  // ── 数据:真引擎种子,本屏只做合并/排序/分组,不碰任何 freedom-math ──
+  const now = new Date();
+  const data = makeDemoData(now);
+
+  // 归一成扁平交易形状,行模板单分支即可
+  type Tx = {
+    id: string;
+    kind: "expense" | "income";
+    name: string; // 支出=分类 / 收入=来源
+    note: string;
+    date: Date;
+    amount: number; // 正数,符号由 kind 决定
+    category?: string; // 仅支出,用于二级筛选
+  };
+
+  const allTx: Tx[] = [
+    ...data.expenses.map((e) => ({
+      id: e.id,
+      kind: "expense" as const,
+      name: e.category,
+      note: e.note,
+      date: e.date,
+      amount: e.amount,
+      category: e.category,
+    })),
+    ...data.incomes.map((i) => ({
+      id: i.id,
+      kind: "income" as const,
+      name: i.source,
+      note: i.note,
+      date: i.date,
+      amount: i.amount,
+    })),
+  ];
+
+  // ── 筛选状态 ──
+  type Filter = "all" | "expense" | "income";
+  let filter = $state<Filter>("all");
+  let selectedCategory = $state<string | null>(null);
+  // 行级本地删除(自包含、无持久化):被撤销的 id 集合,总额随之响应式重算
+  let removed = $state<Set<string>>(new Set());
+
+  // 切出支出 tab 时分类二级筛选自动失效 —— 派生「有效分类」,免 $effect 的 rune 顺序坑
+  const effectiveCategory = $derived(filter === "expense" ? selectedCategory : null);
+
+  // ── 派生:分类汇总(降序),只统计支出,排除已撤销 ──
+  const expenseCategoryTotals = $derived.by(() => {
+    const g = new Map<string, number>();
+    for (const e of data.expenses) {
+      if (removed.has(e.id)) continue;
+      g.set(e.category, (g.get(e.category) ?? 0) + e.amount);
+    }
+    return [...g.entries()]
+      .map(([category, total]) => ({ category, total }))
+      .sort((a, b) => b.total - a.total);
+  });
+  const categoryGrandTotal = $derived(expenseCategoryTotals.reduce((s, c) => s + c.total, 0));
+
+  // ── 派生:筛选 + 排序(日期降序,新的在上)——
+  const filteredTransactions = $derived.by(() => {
+    let list = allTx.filter((t) => !removed.has(t.id));
+    if (filter === "expense") {
+      list = list.filter((t) => t.kind === "expense");
+      if (effectiveCategory) list = list.filter((t) => t.category === effectiveCategory);
+    } else if (filter === "income") {
+      list = list.filter((t) => t.kind === "income");
+    }
+    return list.slice().sort((a, b) => b.date.getTime() - a.date.getTime());
+  });
+
+  // ── 派生:汇总行 ──
+  const count = $derived(filteredTransactions.length);
+  const net = $derived(
+    filteredTransactions.reduce(
+      (s, t) => (t.kind === "income" ? s + t.amount : s - t.amount),
+      0
+    )
+  );
+
+  // ── 格式化 ──
+  const nf = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 0 });
+  const nf0 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+
+  function money(v: number): string {
+    return nf.format(v);
+  }
+  function netDisplay(v: number): string {
+    // 净额始终 --ink,只用 +/− 前缀表方向(对齐 iOS netDisplay)
+    return (v >= 0 ? "+¥" : "−¥") + money(Math.abs(v));
+  }
+  function fmtDate(d: Date): string {
+    // 中文自然日,对齐 iOS .dateTime.year().month().day() 在 zh 设备上的渲染
+    // 同 Dashboard.svelte 的「M 月 D 日」口径(此处带年份)
+    return `${d.getFullYear()} 年 ${d.getMonth() + 1} 月 ${d.getDate()} 日`;
+  }
+
+  const filters: { id: Filter; label: string }[] = [
+    { id: "all", label: "全部" },
+    { id: "expense", label: "支出" },
+    { id: "income", label: "收入" },
+  ];
+
+  function setFilter(f: Filter) {
+    filter = f;
+    if (f !== "expense") selectedCategory = null;
+  }
+
+  function toggleCategory(c: string) {
+    selectedCategory = selectedCategory === c ? null : c;
+  }
+
+  function removeTx(id: string) {
+    const next = new Set(removed);
+    next.add(id);
+    removed = next;
+  }
+</script>
+
+<div class="hist">
+  <!-- ───── Header ───── -->
+  <header class="page-head">
+    <div class="head-text">
+      <p class="kicker">HISTORY · 流水</p>
+      <h1>History</h1>
+    </div>
+    <button class="cal-btn" aria-label="月度汇总" title="月度汇总">
+      <svg viewBox="0 0 24 24" class="cal-ic">
+        <rect x="3" y="4.5" width="18" height="16" rx="2.5" />
+        <path d="M3 9h18M8 2.5v4M16 2.5v4" />
+        <path d="M7.5 13h2M11 13h2M14.5 13h2M7.5 16.5h2M11 16.5h2" />
+      </svg>
+    </button>
+  </header>
+
+  <!-- ───── Segmented filter ───── -->
+  <div class="seg" role="tablist" aria-label="筛选">
+    {#each filters as f (f.id)}
+      <button
+        class="seg-btn"
+        class:active={filter === f.id}
+        role="tab"
+        aria-selected={filter === f.id}
+        onclick={() => setFilter(f.id)}
+      >
+        {f.label}
+      </button>
+    {/each}
+  </div>
+
+  <!-- ───── Summary row ───── -->
+  <div class="summary">
+    <span class="sum-count num">共 {nf0.format(count)} 笔</span>
+    <span class="sum-net num">净 {netDisplay(net)}</span>
+  </div>
+
+  <!-- ───── Category chips (支出 tab only) ───── -->
+  {#if filter === "expense" && expenseCategoryTotals.length > 0}
+    <div class="chips" aria-label="分类汇总">
+      <button
+        class="chip"
+        class:on={effectiveCategory === null}
+        onclick={() => (selectedCategory = null)}
+      >
+        <span class="chip-label">全部</span>
+        <span class="chip-amt num">¥{nf0.format(categoryGrandTotal)}</span>
+      </button>
+      {#each expenseCategoryTotals as c (c.category)}
+        <button
+          class="chip"
+          class:on={effectiveCategory === c.category}
+          onclick={() => toggleCategory(c.category)}
+        >
+          <span class="chip-label">{c.category}</span>
+          <span class="chip-amt num">¥{nf0.format(c.total)}</span>
+        </button>
+      {/each}
+    </div>
+  {/if}
+
+  <!-- ───── Transaction list ───── -->
+  {#if filteredTransactions.length === 0}
+    <div class="empty vault-card">
+      <svg viewBox="0 0 24 24" class="empty-ic">
+        <path d="M12 7v5l3 2M4 12a8 8 0 1 0 2-5" />
+      </svg>
+      <p class="empty-title">还没有记录</p>
+      <p class="empty-sub">回 Dashboard 添加第一笔支出或收入</p>
+    </div>
+  {:else}
+    <ul class="list vault-card">
+      {#each filteredTransactions as tx (tx.id)}
+        <li class="row">
+          <div class="row-left">
+            <span class="row-name">{tx.name}</span>
+            {#if tx.note}<span class="row-note">{tx.note}</span>{/if}
+            <span class="row-date num">{fmtDate(tx.date)}</span>
+          </div>
+          <span class="row-amt num" class:income={tx.kind === "income"} class:expense={tx.kind === "expense"}>
+            {tx.kind === "income" ? "+¥" : "−¥"}{money(tx.amount)}
+          </span>
+          <button class="del-btn" aria-label="撤销这笔" title="撤销这笔" onclick={() => removeTx(tx.id)}>
+            <svg viewBox="0 0 24 24" class="del-ic"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
+        </li>
+      {/each}
+    </ul>
+  {/if}
+</div>
+
+<style>
+  .hist {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-lg);
+    max-width: 1080px;
+    margin: 0 auto;
+  }
+
+  /* ── Header ── */
+  .page-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--sp-lg);
+    margin-bottom: var(--sp-xs);
+  }
+  .page-head h1 {
+    font-size: 30px;
+    font-weight: 500;
+    margin: 4px 0 0;
+    letter-spacing: -0.01em;
+  }
+  .cal-btn {
+    width: 38px;
+    height: 38px;
+    flex: 0 0 38px;
+    border-radius: 999px;
+    border: 1px solid var(--hairline);
+    background: var(--mist);
+    color: var(--ink-muted);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  }
+  .cal-btn:hover {
+    background: var(--mist2);
+    color: var(--ink);
+    border-color: var(--ink-ghost);
+  }
+  .cal-ic {
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* ── Segmented filter ── */
+  .seg {
+    display: inline-flex;
+    align-self: flex-start;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 999px;
+    border: 1px solid var(--hairline);
+    background: var(--mist);
+  }
+  .seg-btn {
+    font-family: var(--font-rounded);
+    font-size: 14px;
+    font-weight: 500;
+    padding: 7px 22px;
+    border-radius: 999px;
+    border: 0;
+    background: transparent;
+    color: var(--ink-muted);
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .seg-btn:hover {
+    color: var(--ink);
+  }
+  .seg-btn.active {
+    background: color-mix(in srgb, var(--sky) 14%, transparent);
+    color: var(--sky-deep);
+  }
+
+  /* ── Summary row ── */
+  .summary {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 0 var(--sp-xs);
+  }
+  .sum-count {
+    font-size: 13px;
+    color: var(--ink-faint);
+  }
+  .sum-net {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--ink);
+  }
+
+  /* ── Category chips ── */
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-sm);
+  }
+  .chip {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--hairline-soft);
+    background: var(--mist);
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+  .chip:hover {
+    background: var(--mist2);
+  }
+  .chip-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    color: var(--ink-muted);
+  }
+  .chip-amt {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--ink);
+  }
+  .chip.on {
+    background: var(--ink);
+    border-color: var(--ink);
+  }
+  .chip.on .chip-label,
+  .chip.on .chip-amt {
+    color: var(--paper);
+  }
+
+  /* ── Transaction list ── */
+  .list {
+    list-style: none;
+    margin: 0;
+    padding: var(--sp-xs) var(--sp-xl);
+  }
+  .row {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sp-md);
+    padding: var(--sp-md) 0;
+    border-bottom: 1px solid var(--hairline-soft);
+  }
+  .row:last-child {
+    border-bottom: 0;
+  }
+  .row-left {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+    flex: 1;
+  }
+  .row-name {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--ink);
+  }
+  .row-note {
+    font-size: 12px;
+    color: var(--ink-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  .row-date {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.03em;
+    color: var(--ink-faint);
+  }
+  .row-amt {
+    font-size: 15px;
+    font-weight: 400;
+    white-space: nowrap;
+    margin-top: 1px;
+  }
+  .row-amt.income {
+    color: var(--sky-deep);
+  }
+  .row-amt.expense {
+    color: var(--flame);
+  }
+  .del-btn {
+    width: 22px;
+    height: 22px;
+    flex: 0 0 22px;
+    border-radius: 999px;
+    border: 1px solid var(--hairline-soft);
+    background: transparent;
+    color: var(--ink-faint);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    margin-top: 1px;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  }
+  .del-btn:hover {
+    color: var(--flame);
+    border-color: color-mix(in srgb, var(--flame) 55%, var(--hairline));
+  }
+  .del-ic {
+    width: 10px;
+    height: 10px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+  }
+
+  /* ── Empty state ── */
+  .empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sp-sm);
+    padding: var(--sp-3xl) var(--sp-xl);
+    text-align: center;
+  }
+  .empty-ic {
+    width: 40px;
+    height: 40px;
+    fill: none;
+    stroke: var(--ink-faint);
+    stroke-width: 1.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .empty-title {
+    font-size: 18px;
+    font-weight: 300;
+    color: var(--ink);
+    margin: var(--sp-sm) 0 0;
+  }
+  .empty-sub {
+    font-size: 14px;
+    color: var(--ink-muted);
+    margin: 0;
+  }
+
+  @media (max-width: 720px) {
+    .page-head h1 {
+      font-size: 26px;
+    }
+    .seg-btn {
+      padding: 7px 16px;
+    }
+    .list {
+      padding: var(--sp-xs) var(--sp-lg);
+    }
+  }
+</style>
