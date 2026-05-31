@@ -32,8 +32,9 @@
 - [ ] 各输入 Sheet(记支出/记收入/编辑桶/加被动源/模拟决策)— 目前只能导入,还不能手输
 - [ ] 月度汇总(History 日历入口)
 - [ ] 动画(呼吸网格 / 流星 / 格子级联 —— TimelineView → requestAnimationFrame/CSS)
-- [ ] PWA(manifest + service worker,可离线 + 添加到主屏)+ 自托管字体
-- [ ] 部署 CF Pages
+- [x] **PWA**(vite-plugin-pwa:manifest + autoUpdate SW + precache,可离线 + 添加到主屏)+ 系统字体(零外链)+ index.html PWA meta + 图标 192/512/maskable
+- [x] **GitHub 公开仓库**:[coni555/FreeGrid-Web](https://github.com/coni555/FreeGrid-Web)(README+LICENSE+topics,curl 直连建仓绕 gh 代理)
+- [ ] **部署 CF Pages — 待用户在 CF 后台连接 GitHub 仓库**(构建 `npm run build` / 输出 `dist` / Node 由 .node-version=22.12 锁)。连完即自动部署,以后 push 自动更新
 
 ## 设计源（2026-05-30 续2 修正)
 
