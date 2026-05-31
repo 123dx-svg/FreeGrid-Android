@@ -1,10 +1,7 @@
 <script lang="ts">
-  import { makeDemoData } from "./demo";
+  import { store, deleteTransaction } from "./store.svelte";
 
-  // ── 数据:真引擎种子,本屏只做合并/排序/分组,不碰任何 freedom-math ──
-  const now = new Date();
-  const data = makeDemoData(now);
-
+  // ── 数据:中央响应式 store,本屏只做合并/排序/分组,不碰任何 freedom-math ──
   // 归一成扁平交易形状,行模板单分支即可
   type Tx = {
     id: string;
@@ -16,8 +13,8 @@
     category?: string; // 仅支出,用于二级筛选
   };
 
-  const allTx: Tx[] = [
-    ...data.expenses.map((e) => ({
+  const allTx: Tx[] = $derived([
+    ...store.expenses.map((e) => ({
       id: e.id,
       kind: "expense" as const,
       name: e.category,
@@ -26,7 +23,7 @@
       amount: e.amount,
       category: e.category,
     })),
-    ...data.incomes.map((i) => ({
+    ...store.incomes.map((i) => ({
       id: i.id,
       kind: "income" as const,
       name: i.source,
@@ -34,23 +31,20 @@
       date: i.date,
       amount: i.amount,
     })),
-  ];
+  ]);
 
   // ── 筛选状态 ──
   type Filter = "all" | "expense" | "income";
   let filter = $state<Filter>("all");
   let selectedCategory = $state<string | null>(null);
-  // 行级本地删除(自包含、无持久化):被撤销的 id 集合,总额随之响应式重算
-  let removed = $state<Set<string>>(new Set());
 
   // 切出支出 tab 时分类二级筛选自动失效 —— 派生「有效分类」,免 $effect 的 rune 顺序坑
   const effectiveCategory = $derived(filter === "expense" ? selectedCategory : null);
 
-  // ── 派生:分类汇总(降序),只统计支出,排除已撤销 ──
+  // ── 派生:分类汇总(降序),只统计支出 ──
   const expenseCategoryTotals = $derived.by(() => {
     const g = new Map<string, number>();
-    for (const e of data.expenses) {
-      if (removed.has(e.id)) continue;
+    for (const e of store.expenses) {
       g.set(e.category, (g.get(e.category) ?? 0) + e.amount);
     }
     return [...g.entries()]
@@ -61,7 +55,7 @@
 
   // ── 派生:筛选 + 排序(日期降序,新的在上)——
   const filteredTransactions = $derived.by(() => {
-    let list = allTx.filter((t) => !removed.has(t.id));
+    let list = allTx;
     if (filter === "expense") {
       list = list.filter((t) => t.kind === "expense");
       if (effectiveCategory) list = list.filter((t) => t.category === effectiveCategory);
@@ -110,12 +104,6 @@
 
   function toggleCategory(c: string) {
     selectedCategory = selectedCategory === c ? null : c;
-  }
-
-  function removeTx(id: string) {
-    const next = new Set(removed);
-    next.add(id);
-    removed = next;
   }
 </script>
 
@@ -201,7 +189,7 @@
           <span class="row-amt num" class:income={tx.kind === "income"} class:expense={tx.kind === "expense"}>
             {tx.kind === "income" ? "+¥" : "−¥"}{money(tx.amount)}
           </span>
-          <button class="del-btn" aria-label="撤销这笔" title="撤销这笔" onclick={() => removeTx(tx.id)}>
+          <button class="del-btn" aria-label="撤销这笔" title="撤销这笔" onclick={() => deleteTransaction(tx.id, tx.kind)}>
             <svg viewBox="0 0 24 24" class="del-ic"><path d="M6 6l12 12M18 6L6 18" /></svg>
           </button>
         </li>

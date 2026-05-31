@@ -28,8 +28,9 @@
       · History:segmented 筛选 + 分类 chip + 流水(中文日期 + 支出 flame/收入 sky + × 删除)
       · Check:3/8 进度 hero + 8 项自检(1:1 移植,达成态自洽)
       · ⚠️ 待统一:页面大标题语言不一致(Dashboard/Check 中文 h1,Assets/History 英文 h1)
-- [ ] 各 Sheet(记支出/收入/模拟决策/导入预览)
-- [ ] 导入导出(JSON 对齐 BackupJSON + CSV)+ 月度汇总
+- [x] **真持久化 + 导入(让它真能用)**:`store.svelte.ts` 响应式中央 store + localStorage(序列化格式 = BackupJSON,一份 codec 三用:本地存/导入 iOS/导出)。四屏改读 store($derived 全响应)。**已端到端验证**:导入 JSON → 四屏实时更新 → 刷新不丢 → 分类归一(shopping→购物)→ ∞ 态。已接:导入/导出 JSON+CSV/清空/调拨/删除。修了 ∞ 态网格画爆 bug(gridState 统一切分 count)+ ∞ 网格单位标签
+- [ ] 各输入 Sheet(记支出/记收入/编辑桶/加被动源/模拟决策)— 目前只能导入,还不能手输
+- [ ] 月度汇总(History 日历入口)
 - [ ] 动画(呼吸网格 / 流星 / 格子级联 —— TimelineView → requestAnimationFrame/CSS)
 - [ ] PWA(manifest + service worker,可离线 + 添加到主屏)+ 自托管字体
 - [ ] 部署 CF Pages

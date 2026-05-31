@@ -1,27 +1,11 @@
 <script lang="ts">
-  import { makeDemoData } from "./demo";
-  import { netWorth } from "./models";
-  import {
-    trackDays,
-    dailyBurn,
-    dailyPassive,
-    passiveRatio,
-    freedomDays,
-  } from "./freedom-math";
+  import { store } from "./store.svelte";
+  import { deriveDashboard } from "./derive";
 
   // 一个 now 贯穿全程,避免跨午夜漂移(与 Dashboard 同口径)
   const now = new Date();
-  const data = makeDemoData(now);
-
-  // ── 引擎派生(全部走 freedom-math,不重写任何计算) ──
-  const days = trackDays(data.assets.firstRecordDate, now);
-  const totalExp = data.expenses.reduce((s, e) => s + e.amount, 0);
-  const burn = dailyBurn(totalExp, days);
-  const nw = netWorth(data.assets);
-  const passive = dailyPassive(data.passiveSources);
-  const ratio = passiveRatio(passive, burn);
-  // 自由天数含被动 — 跟 Dashboard hero 一致;rules 4/5 比的是这个原始数值
-  const freedom = freedomDays(nw, burn, passive);
+  // 响应式:store 变(导入/记账/删除)→ vm 及所有派生量自动重算
+  const vm = $derived(deriveDashboard(store, now));
 
   interface CheckItem {
     title: string;
@@ -29,20 +13,21 @@
   }
 
   // 8 项自检 — 顺序 / 阈值 / 文案 1:1 移植自 iOS CheckView
-  const items: CheckItem[] = [
-    { title: "记录天数超过 30 天", done: days >= 30 },
-    { title: "了解自己的日均消费", done: days >= 7 && burn > 0 },
-    { title: "记录了可变现资产", done: nw > 0 },
-    { title: "自由天数超过 180 天", done: freedom >= 180 },
-    { title: "自由天数超过 365 天", done: freedom >= 365 },
-    { title: "有被动收入来源", done: data.passiveSources.length > 0 },
-    { title: "被动覆盖率超过 50%", done: ratio >= 0.5 },
-    { title: "被动收入覆盖日常消费 (≥100%)", done: ratio >= 1.0 },
-  ];
+  // 全部走 deriveDashboard 的派生量;自由天数含被动,跟 Dashboard hero 一致
+  const items = $derived<CheckItem[]>([
+    { title: "记录天数超过 30 天", done: vm.trackDays >= 30 },
+    { title: "了解自己的日均消费", done: vm.trackDays >= 7 && vm.dailyBurn > 0 },
+    { title: "记录了可变现资产", done: vm.netWorth > 0 },
+    { title: "自由天数超过 180 天", done: vm.freedomDays >= 180 },
+    { title: "自由天数超过 365 天", done: vm.freedomDays >= 365 },
+    { title: "有被动收入来源", done: store.passiveSources.length > 0 },
+    { title: "被动覆盖率超过 50%", done: vm.passiveRatio >= 0.5 },
+    { title: "被动收入覆盖日常消费 (≥100%)", done: vm.passiveRatio >= 1.0 },
+  ]);
 
-  const completed = items.filter((i) => i.done).length;
-  const progress = completed / items.length;
-  const pct = Math.round(progress * 100);
+  const completed = $derived(items.filter((i) => i.done).length);
+  const progress = $derived(completed / items.length);
+  const pct = $derived(Math.round(progress * 100));
 </script>
 
 <div class="check">

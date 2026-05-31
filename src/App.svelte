@@ -4,6 +4,9 @@
   import Assets from "./lib/Assets.svelte";
   import History from "./lib/History.svelte";
   import Check from "./lib/Check.svelte";
+  import { initStore } from "./lib/store.svelte";
+
+  initStore(); // 水合 localStorage 存档,无则种入 demo
 
   let theme = $state<"dark" | "light">("dark");
   let tab = $state("dashboard");

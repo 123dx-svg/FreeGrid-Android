@@ -1,37 +1,99 @@
 <script lang="ts">
   // Assets 屏 —— 1:1 移植 iOS AssetsView,reflow 桌面。
   // 数据全走真引擎(deriveDashboard),数字只渲染不重算。
-  // 交互控件(调拨方向 / 金额输入)给本地 $state 让它看着是活的;
-  // 真实写库 / 编辑 sheet / 导出 / 清空 在本草稿期不实现(无 store/modal),只做样式态。
-  import { makeDemoData } from "./demo";
+  // 数据源 = 中央响应式 store;所有派生量 $derived,store 变更后屏即时刷新。
+  // 交互:调拨写库、导出 CSV/JSON、从 JSON 导入、清空 —— 均落真实 store 操作。
   import { deriveDashboard } from "./derive";
+  import {
+    store,
+    transfer,
+    deletePassiveSource,
+    importBackup,
+    clearAll,
+    exportJSONString,
+  } from "./store.svelte";
 
-  const now = new Date();
-  const data = makeDemoData(now);
-  const vm = deriveDashboard(data, now);
+  const vm = $derived(deriveDashboard(store));
 
   const yuan = (n: number) => "¥" + Math.round(n).toLocaleString("en-US");
 
-  // updatedAt = now − 3h(demo 种子保证),用英文相对时间还原 "3 hours ago"
+  // 上次更新相对时间(英文),随 store.assets.updatedAt 实时变化
   const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
-  const updatedAgo = (() => {
-    const diffMs = data.assets.updatedAt.getTime() - now.getTime();
+  const updatedAgo = $derived.by(() => {
+    const diffMs = store.assets.updatedAt.getTime() - Date.now();
     const hours = Math.round(diffMs / 3_600_000);
     return rtf.format(hours, "hour");
-  })();
+  });
 
   // 被动覆盖率(0% 时数字 ink、% inkMuted、caption "覆盖日常消费")
-  const passivePct = Math.round(vm.passiveRatio * 100);
-  const passiveCovered = vm.passiveRatio >= 1;
-  const passiveSources = data.passiveSources; // demo 为空 → 渲染空态提示
+  const passivePct = $derived(Math.round(vm.passiveRatio * 100));
+  const passiveCovered = $derived(vm.passiveRatio >= 1);
+  const passiveSources = $derived(store.passiveSources); // 空 → 渲染空态提示
 
-  // ── 调拨(presentational:本地态,确认按钮按金额非空亮起)──
+  // ── 调拨(本地态,确认按钮按金额非空亮起)──
   let transferDir = $state<"cashToAssets" | "assetsToCash">("cashToAssets");
   let transferAmount = $state("");
   const transferValid = $derived.by(() => {
     const v = Number(transferAmount);
     return Number.isFinite(v) && v > 0;
   });
+
+  function doTransfer() {
+    if (!transferValid) return;
+    transfer(Number(transferAmount), transferDir === "cashToAssets");
+    transferAmount = "";
+  }
+
+  // ── 数据管理:导出 / 导入 / 清空 ──
+  function download(text: string, filename: string, mime: string) {
+    const blob = new Blob([text], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportJSON() {
+    download(exportJSONString(), "freegrid-backup.json", "application/json");
+  }
+
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const csvCell = (v: string | number) => {
+    const s = String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+
+  function exportCSV() {
+    const rows = [["类型", "日期", "类别/来源", "金额", "备注"]];
+    for (const e of store.expenses) rows.push(["支出", ymd(e.date), e.category, String(e.amount), e.note ?? ""]);
+    for (const i of store.incomes) rows.push(["收入", ymd(i.date), i.source, String(i.amount), i.note ?? ""]);
+    const body = rows.map((r) => r.map(csvCell).join(",")).join("\r\n");
+    download("\uFEFF" + body, "freegrid.csv", "text/csv;charset=utf-8");
+  }
+
+  let fileInput = $state<HTMLInputElement | null>(null);
+  function triggerImport() {
+    fileInput?.click();
+  }
+  async function onFilePicked(ev: Event) {
+    const input = ev.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    if (file) {
+      try {
+        importBackup(JSON.parse(await file.text()));
+      } catch {
+        /* 解析失败忽略,不崩 */
+      }
+    }
+    input.value = ""; // 复位,允许重选同一文件
+  }
+
+  function purgeAll() {
+    if (window.confirm("确定清空所有数据?此操作不可撤销")) clearAll();
+  }
 </script>
 
 <div class="assets">
@@ -128,6 +190,15 @@
                 <span class="src-name">{src.name}</span>
                 <span class="src-meta num">¥{Math.round(src.monthlyAmount)}/月 · ¥{(src.monthlyAmount / 30).toFixed(1)}/天</span>
               </div>
+              <button
+                class="src-del"
+                aria-label="删除被动收入源"
+                onclick={() => deletePassiveSource(src.id)}
+              >
+                <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+                  <path fill="currentColor" d="M18.3 5.71 12 12l6.3 6.29-1.42 1.42L10.59 13.4 4.29 19.7 2.88 18.3 9.17 12 2.88 5.71 4.29 4.29l6.3 6.3 6.29-6.3 1.42 1.42Z"/>
+                </svg>
+              </button>
             </div>
           {/each}
         {/if}
@@ -161,7 +232,7 @@
           />
         </div>
 
-        <button class="vbtn confirm" class:dim={!transferValid}>
+        <button class="vbtn confirm" class:dim={!transferValid} onclick={doTransfer}>
           <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
             <path fill="currentColor" d="M7 7h11l-3-3 1.4-1.4L21.8 8l-5.4 5.4L15 12l3-3H7V7Zm10 10H6l3 3-1.4 1.4L2.2 16l5.4-5.4L9 12l-3 3h11v2Z"/>
           </svg>
@@ -194,13 +265,13 @@
     </div>
 
     <div class="data-btns">
-      <button class="vbtn data-out">
+      <button class="vbtn data-out" onclick={exportCSV}>
         <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
           <path fill="currentColor" d="M4 4h16v16H4V4Zm2 4v3h5V8H6Zm7 0v3h5V8h-5Zm-7 5v3h5v-3H6Zm7 0v3h5v-3h-5Z"/>
         </svg>
         导出 CSV
       </button>
-      <button class="vbtn data-out">
+      <button class="vbtn data-out" onclick={exportJSON}>
         <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
           <path fill="currentColor" d="M8.5 7.5 5 12l3.5 4.5L7 17.7 2.3 12 7 6.3 8.5 7.5Zm7 0L19 12l-3.5 4.5 1.5 1.2L21.7 12 17 6.3 15.5 7.5Z"/>
         </svg>
@@ -208,16 +279,23 @@
       </button>
     </div>
 
-    <button class="vbtn data-out data-import">
+    <button class="vbtn data-out data-import" onclick={triggerImport}>
       <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
         <path fill="currentColor" d="M12 3v10.6l3.3-3.3 1.4 1.4L12 17.4l-4.7-4.7 1.4-1.4 3.3 3.3V3h2ZM5 19h14v2H5v-2Z"/>
       </svg>
       从 JSON 导入
     </button>
+    <input
+      bind:this={fileInput}
+      type="file"
+      accept=".json,application/json"
+      onchange={onFilePicked}
+      hidden
+    />
     <p class="data-note">CSV 用 Excel / Numbers 打开,JSON 可回导备份</p>
 
     <hr class="hairline soft" />
-    <button class="purge">
+    <button class="purge" onclick={purgeAll}>
       <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
         <path fill="currentColor" d="M6 7h12l-1 14H7L6 7Zm3-3h6l1 2H8l1-2ZM4 6h16v1H4V6Z"/>
       </svg>
@@ -408,6 +486,20 @@
     font-family: var(--font-mono);
     font-size: 11px;
     color: var(--ink-faint);
+  }
+  .src-del {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 0;
+    padding: 4px;
+    color: var(--ink-faint);
+    cursor: pointer;
+  }
+  .src-del:hover {
+    color: var(--flame);
   }
 
   /* ── 调拨 ── */

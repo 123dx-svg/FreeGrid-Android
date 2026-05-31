@@ -151,22 +151,18 @@ export function gridState(
 
   const netWorthVal = Math.max(0, lockedAssets) + Math.max(0, cash);
   const netBurn = Math.max(0, dailyBurnVal - dailyPassiveVal);
-
-  // 被动完全覆盖 → 年档满格
-  if (netBurn <= 0) {
-    return { unit: "year", count: 99, blueDays: 99 * 365, yellowDays: 0, isOverflow: true };
-  }
-
-  const totalDays = netWorthVal / netBurn;
-  if (!Number.isFinite(totalDays)) {
-    return { unit: "year", count: 99, blueDays: 99 * 365, yellowDays: 0, isOverflow: true };
-  }
+  const totalDays = netBurn > 0 ? netWorthVal / netBurn : Infinity;
 
   let unit: GridUnit;
   let count: number;
   let isOverflow: boolean;
 
-  if (totalDays < 365) {
+  if (!Number.isFinite(totalDays)) {
+    // 被动完全覆盖(净消耗 0)→ 年档满格,永远自由
+    unit = "year";
+    count = 99;
+    isOverflow = true;
+  } else if (totalDays < 365) {
     unit = "day";
     count = floor(totalDays);
     isOverflow = false;
@@ -181,10 +177,12 @@ export function gridState(
     isOverflow = years > GRID_UNIT_META.year.maxCells;
   }
 
-  // 双色分配:蓝(资产)在前,金(现金)在后
+  // 双色分配:blueDays(资产→渲染金)在前,yellowDays(现金→渲染蓝)在后。
+  // 关键:在所有分支统一对最终 count 切分 → blueDays + yellowDays 恒 = count,
+  // 渲染层永远只画 count 个格(修掉 ∞ 态曾返回 99*365 导致画爆的 bug)。
   let blueCells = 0;
   let goldCells = 0;
-  if (netWorthVal > 0) {
+  if (netWorthVal > 0 && count > 0) {
     blueCells = Math.round((count * Math.max(0, lockedAssets)) / netWorthVal);
     goldCells = count - blueCells;
   }

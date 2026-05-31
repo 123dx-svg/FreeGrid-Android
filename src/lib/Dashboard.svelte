@@ -1,27 +1,31 @@
 <script lang="ts">
-  import { makeDemoData } from "./demo";
+  import { store } from "./store.svelte";
   import { deriveDashboard } from "./derive";
   import { freedomUnitLabel } from "./freedom-math";
   import Sparkline from "./components/Sparkline.svelte";
   import FreedomGrid from "./components/FreedomGrid.svelte";
 
   const now = new Date();
-  const vm = deriveDashboard(makeDemoData(now), now);
+  // 响应式:store 变(导入/记账/删除)→ vm 及所有派生量自动重算
+  const vm = $derived(deriveDashboard(store, now));
 
-  const unitLabel = freedomUnitLabel(vm.unit);
-  const kicker =
-    vm.unit === "day" ? "FREEDOM DAYS" : vm.unit === "month" ? "FREEDOM MONTHS" : "FREEDOM YEARS";
+  const unitLabel = $derived(freedomUnitLabel(vm.unit));
+  // 网格用它自己的档位(∞ 态 hero 单位=天,但网格档位=年,标签须跟网格走)
+  const gridUnitLabel = $derived(freedomUnitLabel(vm.grid.unit));
+  const kicker = $derived(
+    vm.unit === "day" ? "FREEDOM DAYS" : vm.unit === "month" ? "FREEDOM MONTHS" : "FREEDOM YEARS"
+  );
 
-  const isInf = !Number.isFinite(vm.freedomDays);
-  const weeks = Math.max(0, vm.history.length - 1);
+  const isInf = $derived(!Number.isFinite(vm.freedomDays));
+  const weeks = $derived(Math.max(0, vm.history.length - 1));
 
   function fmtDeplete(d: Date | null): string {
     if (!d) return "";
     return `${d.getMonth() + 1} 月 ${d.getDate()} 日`;
   }
 
-  const dailyStr = vm.dailyBurn.toFixed(1);
-  const passiveStr = `${Math.round(vm.passiveRatio * 100)}%`;
+  const dailyStr = $derived(vm.dailyBurn.toFixed(1));
+  const passiveStr = $derived(`${Math.round(vm.passiveRatio * 100)}%`);
 </script>
 
 <div class="dash">
@@ -70,7 +74,7 @@
   <section class="vault-card">
     <div class="card-head">
       <span class="kicker">FREEDOM GRID</span>
-      <span class="muted num">{vm.grid.count} {unitLabel}</span>
+      <span class="muted num">{vm.grid.count} {gridUnitLabel}</span>
     </div>
     <div class="grid-wrap">
       <FreedomGrid grid={vm.grid} />
@@ -78,7 +82,7 @@
     <div class="legend">
       <span class="lg"><i class="dot gold"></i>资产</span>
       <span class="lg"><i class="dot blue"></i>现金</span>
-      <span class="muted spacer">每格 = 1 {unitLabel}自由</span>
+      <span class="muted spacer">每格 = 1 {gridUnitLabel}自由</span>
     </div>
   </section>
 
