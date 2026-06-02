@@ -43,6 +43,9 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 自动更新签名:有这两个密钥 → tauri-action 自动签名产物 + 生成并上传 latest.json
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           # workflow_dispatch 无 tag 时回退到固定标签,避免空 tagName 报错
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'desktop-latest' }}
