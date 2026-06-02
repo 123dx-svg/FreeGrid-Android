@@ -10,7 +10,21 @@
   initStore(); // 水合本机存档;无数据则空白起点(不自动种演示数据,仅 ?demo=1 例外)
   checkForUpdate(); // 桌面端静默检查更新;网页端 no-op(__TAURI_INTERNALS__ 守卫)
 
-  let theme = $state<"dark" | "light">("dark");
+  const THEME_KEY = "freegrid-theme";
+  // 方案 B:① 有手动选择 → 用它;② 否则首次跟随系统;③ 兜底暗色(品牌默认)。
+  // 未手动切过的用户每次启动都重读系统 → 等效"始终跟随系统";切过一次即锁定其选择。
+  function initialTheme(): "dark" | "light" {
+    try {
+      const saved = localStorage.getItem(THEME_KEY);
+      if (saved === "dark" || saved === "light") return saved;
+      if (window.matchMedia?.("(prefers-color-scheme: light)").matches) return "light";
+    } catch {
+      /* localStorage/matchMedia 不可用时兜底 */
+    }
+    return "dark";
+  }
+
+  let theme = $state<"dark" | "light">(initialTheme());
   let tab = $state("dashboard");
 
   $effect(() => {
@@ -19,6 +33,11 @@
 
   function toggleTheme() {
     theme = theme === "dark" ? "light" : "dark";
+    try {
+      localStorage.setItem(THEME_KEY, theme); // 记住手动选择,跨启动保留
+    } catch {
+      /* 隐私模式等写入失败:忽略,本次会话仍生效 */
+    }
   }
 </script>
 
