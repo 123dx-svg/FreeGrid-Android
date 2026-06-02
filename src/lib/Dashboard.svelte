@@ -13,6 +13,10 @@
   // 响应式:store 变(导入/记账/删除)→ vm 及所有派生量自动重算
   const vm = $derived(deriveDashboard(store, now));
 
+  // 真·空态:无交易且净值为 0 → 引导记第一笔。
+  // 必须连净值一起判 0,别只看 isInf —— "有资产、被动覆盖"也会 ∞,那是合法的财富自由态,不能误当空态。
+  const isEmpty = $derived(store.expenses.length === 0 && store.incomes.length === 0 && vm.netWorth === 0);
+
   // ── 录入 sheet:本地状态 ──
   const pad = (n: number) => String(n).padStart(2, "0");
   const todayYMD = () => `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
@@ -187,6 +191,20 @@
     <h1>自由仪表盘</h1>
   </header>
 
+  {#if isEmpty}
+    <!-- ───── 空态引导(无数据时,替代 hero / grid / stats)───── -->
+    <section class="vault-card onboard">
+      <span class="kicker">WELCOME</span>
+      <h2 class="onboard-title">记下<span class="accent">第一笔</span>,点亮你的自由</h2>
+      <p class="onboard-sub">FreeGrid 把你的资产换算成「还能自由多少天」。先记一笔支出或收入,仪表盘和格子就会亮起来。</p>
+      <div class="onboard-actions">
+        <button class="vbtn flame" onclick={() => (showExpense = true)}>− 记支出</button>
+        <button class="vbtn sky" onclick={() => (showIncome = true)}>+ 记收入</button>
+      </div>
+      <p class="onboard-hint">已有备份?到「资产 · Assets」页可一键导入 JSON。</p>
+    </section>
+  {:else}
+
   <!-- ───── Hero ───── -->
   <section class="vault-card hero" class:glow={true}>
     <!-- 暗色 hero 流星层(移植 iOS MeteorLayer),纯 CSS,亮色自动隐藏 -->
@@ -275,6 +293,7 @@
     <button class="vbtn sky" onclick={() => (showIncome = true)}>+ 记收入</button>
     <button class="vbtn ghost" onclick={() => (showSim = true)}>⚡ 模拟一笔 · 看决策影响 →</button>
   </section>
+  {/if}
 </div>
 
 <!-- ───── 记支出 sheet ───── -->
@@ -814,6 +833,40 @@
     color: var(--ink-muted);
     padding: var(--sp-xl) 0;
     margin: 0;
+  }
+
+  /* ── 空态引导 ── */
+  .onboard {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--sp-md);
+    padding: var(--sp-3xl) var(--sp-2xl);
+  }
+  .onboard-title {
+    font-size: 28px;
+    font-weight: 300;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+    margin: var(--sp-xs) 0 0;
+  }
+  .onboard-sub {
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--ink-muted);
+    max-width: 46ch;
+    margin: 0;
+  }
+  .onboard-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-md);
+    margin-top: var(--sp-sm);
+  }
+  .onboard-hint {
+    font-size: 13px;
+    color: var(--ink-faint);
+    margin: var(--sp-sm) 0 0;
   }
 
   @media (max-width: 720px) {

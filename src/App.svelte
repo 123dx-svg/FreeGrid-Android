@@ -6,7 +6,7 @@
   import Check from "./lib/Check.svelte";
   import { initStore } from "./lib/store.svelte";
 
-  initStore(); // 水合 localStorage 存档,无则种入 demo
+  initStore(); // 水合本机存档;无数据则空白起点(不自动种演示数据,仅 ?demo=1 例外)
 
   let theme = $state<"dark" | "light">("dark");
   let tab = $state("dashboard");

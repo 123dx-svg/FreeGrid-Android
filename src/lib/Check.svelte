@@ -7,6 +7,9 @@
   // 响应式:store 变(导入/记账/删除)→ vm 及所有派生量自动重算
   const vm = $derived(deriveDashboard(store, now));
 
+  // 真·空态:无数据时整张清单都不该评估(否则 freedomDays=∞ 会让"超过 180/365 天"两项误亮)
+  const isEmpty = $derived(store.expenses.length === 0 && store.incomes.length === 0 && vm.netWorth === 0);
+
   interface CheckItem {
     title: string;
     done: boolean;
@@ -36,6 +39,14 @@
     <h1>自检清单</h1>
   </header>
 
+  {#if isEmpty}
+    <!-- ───── 空态:无数据时不评估清单(否则 ∞ 会误亮自由天数项)───── -->
+    <section class="ck-empty vault-card">
+      <span class="kicker">FREEDOM CHECKLIST</span>
+      <p class="ck-empty-title">先去记几笔,再来体检</p>
+      <p class="ck-empty-sub">自检清单会随你的记录自动点亮 —— 现在还没有数据可评估。到「仪表盘」记下第一笔吧。</p>
+    </section>
+  {:else}
   <div class="cols">
     <!-- ───── Hero 进度卡 ───── -->
     <section class="vault-card hi hero" class:glow={true}>
@@ -70,6 +81,7 @@
       {/each}
     </section>
   </div>
+  {/if}
 </div>
 
 <style>
@@ -227,6 +239,28 @@
   }
   .row-status.done {
     color: var(--sky-deep);
+  }
+
+  /* ── 空态 ── */
+  .ck-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--sp-sm);
+    padding: var(--sp-3xl) var(--sp-2xl);
+  }
+  .ck-empty-title {
+    font-size: 22px;
+    font-weight: 300;
+    color: var(--ink);
+    margin: var(--sp-sm) 0 0;
+  }
+  .ck-empty-sub {
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--ink-muted);
+    max-width: 44ch;
+    margin: 0;
   }
 
   @media (max-width: 820px) {

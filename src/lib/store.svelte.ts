@@ -2,7 +2,8 @@
 // 中央响应式数据 store(Svelte 5 runes,跨组件共享)。
 // · 持久化:localStorage,序列化格式 = iOS BackupJSON(snake_case)→ 同一套编解码同时服务
 //   "本地保存 / 导入 iOS 导出 / 导出备份",一份 codec 三用。
-// · 首次启动无数据时种入 demo(避免空态突兀),用户可清空或导入自己的数据替换。
+// · 默认空白起点(无数据 → 空态引导),绝不自动种入演示数据;只有 URL 带 ?demo=1 时
+//   才在内存里种 demo(截图/预览用,不写盘)。修复了"下载安装后点进去就有数据"。
 // · 隐私:只读写本机 localStorage,数据不离开浏览器。
 // ============================================================================
 
@@ -152,30 +153,59 @@ function apply(p: Parsed, seeded: boolean) {
   store.seeded = seeded;
 }
 
-/** App 启动调用一次:有存档则水合,否则种入 demo */
+/** 真正的空白起点(无任何交易/资产),seeded:false。clearAll 与首启共用。 */
+function applyEmpty() {
+  apply(
+    {
+      expenses: [],
+      incomes: [],
+      passiveSources: [],
+      assets: { lockedAssets: 0, cash: 0, updatedAt: new Date(), firstRecordDate: null },
+    },
+    false
+  );
+}
+
+/** 是否显式请求演示数据(URL 带 ?demo=1)。默认——含桌面版与普通网页访问——一律不种。 */
+function demoRequested(): boolean {
+  try {
+    return new URLSearchParams(location.search).get("demo") === "1";
+  } catch {
+    return false;
+  }
+}
+
+/** App 启动调用一次。有真实存档则水合;否则默认空白(只有 ?demo=1 才种演示数据)。 */
 export function initStore() {
   let loaded = false;
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      apply(fromBackup(parsed.data as BackupJSON), !!parsed.seeded);
-      loaded = true;
+      // 旧版会在首启自动种入 demo 并标 seeded:true。用户从未改动过的种子一律视为
+      // "无数据":清掉它,让 app 回到真正空白(老用户升级后残留的 demo 自动消失)。
+      if (parsed && parsed.seeded) {
+        localStorage.removeItem(KEY);
+      } else {
+        apply(fromBackup(parsed.data as BackupJSON), false);
+        loaded = true;
+      }
     }
   } catch {
-    /* 损坏存档忽略,落到种子 */
+    /* 损坏存档忽略,落到空白 */
   }
   if (!loaded) {
-    const demo = makeDemoData();
-    apply(
-      {
-        expenses: demo.expenses,
-        incomes: demo.incomes,
-        passiveSources: demo.passiveSources,
-        assets: demo.assets,
-      },
-      true
-    );
+    if (demoRequested()) {
+      // 仅截图/预览:演示数据只在内存,绝不写入用户存档(故不调 persist,直接 return)。
+      const demo = makeDemoData();
+      apply(
+        { expenses: demo.expenses, incomes: demo.incomes, passiveSources: demo.passiveSources, assets: demo.assets },
+        true
+      );
+      _ready = true;
+      return;
+    }
+    applyEmpty();
   }
   _ready = true;
   persist();
@@ -260,15 +290,7 @@ export function importBackup(json: BackupJSON) {
 }
 
 export function clearAll() {
-  apply(
-    {
-      expenses: [],
-      incomes: [],
-      passiveSources: [],
-      assets: { lockedAssets: 0, cash: 0, updatedAt: new Date(), firstRecordDate: null },
-    },
-    false
-  );
+  applyEmpty();
   persist();
 }
 
