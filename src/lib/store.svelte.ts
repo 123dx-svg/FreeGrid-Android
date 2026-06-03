@@ -139,7 +139,16 @@ let _ready = false;
 function persist() {
   if (!_ready) return;
   try {
-    localStorage.setItem(KEY, JSON.stringify({ seeded: store.seeded, data: toBackup() }));
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({
+        seeded: store.seeded,
+        data: toBackup(),
+        // 本地保真:BackupJSON 只存净值 total(对齐 iOS,丢了锁定/现金分桶)。本地额外存一份
+        // 分桶,刷新后按真实比例还原"资产(金)/现金(蓝)",不致全塌成现金。仅本地,不进导出/iOS 桥。
+        buckets: { lockedAssets: store.assets.lockedAssets, cash: store.assets.cash },
+      })
+    );
   } catch {
     /* 配额满等忽略 */
   }
@@ -166,6 +175,15 @@ function applyEmpty() {
   );
 }
 
+/** 还原本地分桶:fromBackup 把净值全落 cash;本地存档带 buckets 时按真实比例还原资产/现金。
+ *  仅本地水合用 —— iOS 导入 / 用户导入的 JSON 无此字段,保持全 cash(正确,无分桶信息)。 */
+function restoreBuckets(buckets: { lockedAssets?: unknown; cash?: unknown } | null | undefined) {
+  if (buckets && typeof buckets.lockedAssets === "number" && typeof buckets.cash === "number") {
+    store.assets.lockedAssets = buckets.lockedAssets;
+    store.assets.cash = buckets.cash;
+  }
+}
+
 /** 是否显式请求演示数据(URL 带 ?demo=1)。默认——含桌面版与普通网页访问——一律不种。 */
 function demoRequested(): boolean {
   try {
@@ -188,6 +206,7 @@ export function initStore() {
         localStorage.removeItem(KEY);
       } else {
         apply(fromBackup(parsed.data as BackupJSON), false);
+        restoreBuckets(parsed.buckets); // 本地保真:还原资产/现金分桶(fromBackup 默认全落 cash)
         loaded = true;
       }
     }

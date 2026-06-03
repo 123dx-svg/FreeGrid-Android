@@ -1,9 +1,16 @@
 import { defineConfig } from 'vite'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 import { VitePWA } from 'vite-plugin-pwa'
+import { readFileSync } from 'node:fs'
+
+// 单一版本源:桌面与网页都从 src-tauri/tauri.conf.json 读版本号,避免硬编码漂移
+const appVersion = JSON.parse(readFileSync('./src-tauri/tauri.conf.json', 'utf-8')).version
 
 // https://vite.dev/config/
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion),
+  },
   plugins: [
     svelte(),
     VitePWA({

@@ -18,6 +18,8 @@
     { id: "check", label: "Check", zh: "自检" },
   ];
 
+  const version = __APP_VERSION__; // 构建期注入,单一源 tauri.conf.json
+
   // 极简 inline 图标(stroke 风,跟 silverline 线条语言一致)
   const icons: Record<string, string> = {
     dashboard: "M3 17l5-5 3 3 7-8",
@@ -55,6 +57,7 @@
   <div class="foot">
     <span class="dot-on"></span>
     本地存储 · 零网络
+    <span class="ver num">v{version}</span>
   </div>
 </aside>
 
@@ -174,5 +177,11 @@
     height: 6px;
     border-radius: 999px;
     background: var(--moss);
+  }
+  .ver {
+    margin-left: auto;
+    font-size: 10px;
+    letter-spacing: 0.02em;
+    color: var(--ink-ghost);
   }
 </style>
