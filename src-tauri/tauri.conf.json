@@ -1,13 +1,13 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "FreeGrid",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "identifier": "cn.conilab.freegrid",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
+    "beforeBuildCommand": "npm run build -- --mode tauri"
   },
   "app": {
     "windows": [
