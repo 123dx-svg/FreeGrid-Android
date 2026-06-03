@@ -15,7 +15,9 @@
     clearAll,
     exportJSONString,
   } from "./store.svelte";
+  import { isTauri, checkForUpdate, installUpdate, updateState } from "./updater.svelte";
 
+  const appVersion = __APP_VERSION__;
   const vm = $derived(deriveDashboard(store));
 
   const yuan = (n: number) => "¥" + Math.round(n).toLocaleString("en-US");
@@ -358,6 +360,33 @@
       清空所有数据
     </button>
   </section>
+
+  <!-- ───── 检查更新(仅桌面端 Tauri)───── -->
+  {#if isTauri}
+    <section class="vault-card upd">
+      <div class="data-head">
+        <span class="kicker">UPDATE · 更新</span>
+        <span class="upd-cur num">v{appVersion}</span>
+      </div>
+      {#if updateState.available}
+        <p class="upd-msg moss">🎉 发现新版本 v{updateState.version}</p>
+        <button class="vbtn confirm" disabled={updateState.status === "downloading"} onclick={installUpdate}>
+          {updateState.status === "downloading" ? "下载安装中…" : "更新并重启"}
+        </button>
+      {:else}
+        <p class="upd-msg" class:err={updateState.status === "error"} class:moss={updateState.status === "uptodate"}>
+          {updateState.status === "checking"
+            ? "检查中…"
+            : updateState.status === "uptodate"
+              ? "已是最新版本 ✓"
+              : updateState.status === "error"
+                ? "检查失败:连不上更新服务器(可能被网络拦截)"
+                : "点一下,看看有没有新版本"}
+        </p>
+        <button class="vbtn" disabled={updateState.status === "checking"} onclick={checkForUpdate}>检查更新</button>
+      {/if}
+    </section>
+  {/if}
 
   <!-- ───── 编辑资产 ───── -->
   <Sheet open={showEditLocked} title="编辑资产" onClose={() => (showEditLocked = false)}>
@@ -786,6 +815,30 @@
   }
   .purge:hover {
     opacity: 0.8;
+  }
+
+  /* ── 检查更新 ── */
+  .upd {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--sp-md);
+  }
+  .upd-cur {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ink-faint);
+  }
+  .upd-msg {
+    font-size: 14px;
+    color: var(--ink-muted);
+    margin: 0;
+  }
+  .upd-msg.moss {
+    color: var(--moss);
+  }
+  .upd-msg.err {
+    color: var(--flame);
   }
 
   /* ── 窄屏塌成单列 ── */
