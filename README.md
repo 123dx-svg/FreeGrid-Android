@@ -10,13 +10,13 @@
 ![PWA](https://img.shields.io/badge/PWA-installable·offline-5a0fc8.svg)
 ![Offline](https://img.shields.io/badge/100%25-本地·零网络-2ea44f.svg)
 
-> 🍎 **产品主页 · 完整理念 · iOS / macOS 原生版 · 想点 Star → [FreeGrid-Freedom](https://github.com/coni555/FreeGrid-Freedom) ⭐**
-> 本仓库是 FreeGrid 的 Windows 桌面端 + 在线 demo 实现。产品哲学、三端介绍、给作者点 Star，都请移步主仓——那里才是 FreeGrid 的「脸面」。
+> 🍎 **产品主页 · 完整理念 · iOS / macOS 原生版 → [FreeGrid-Freedom](https://github.com/coni555/FreeGrid-Freedom)**
+> 本仓库是 FreeGrid 的 Windows 桌面端 + 在线 demo 实现
 
 ## 🌐 在线 demo（零安装）
 
 打开即用，无需注册或安装：**[freegrid-web.pages.dev](https://freegrid-web.pages.dev)**
-它是个**纯前端体验站**——没有后端、不保存账号，数据只存在浏览器本地（清掉就没了）。**纯粹给你打开试一下产品长什么样**，不建议拿它当日常工具。要真正用起来，请装下面的 Windows 桌面版，或主仓的 iOS / macOS 原生版。
+它是个**纯前端体验站**——没有后端、不保存账号，**纯粹给你打开试一下产品长什么样**，不建议拿它当日常工具。要真正用起来，请装下面的 Windows 桌面版，或主仓的 iOS / macOS 原生版。
 
 ## 这是什么
 
