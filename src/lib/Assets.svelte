@@ -79,6 +79,23 @@
     showEditCash = false;
   }
 
+  let showEditLiab = $state(false);
+  let editLiabAmount = $state("");
+  const editLiabValid = $derived.by(() => {
+    if (editLiabAmount.trim() === "") return false;
+    const v = Number(editLiabAmount);
+    return Number.isFinite(v) && v >= 0;
+  });
+  function openEditLiab() {
+    editLiabAmount = String(Math.round(store.assets.liabilities));
+    showEditLiab = true;
+  }
+  function saveEditLiab() {
+    if (!editLiabValid) return;
+    updateBucket("liabilities", Number(editLiabAmount));
+    showEditLiab = false;
+  }
+
   // ── 添加被动收入源 ──
   let showAddPassive = $state(false);
   let passiveName = $state("");
@@ -154,6 +171,26 @@
           <div class="bucket-amount num">{yuan(vm.cash)}</div>
         </section>
       </div>
+
+      <!-- ───── 负债(从净值扣减)───── -->
+      <section class="vault-card bucket liab">
+        <div class="bucket-head">
+          <span class="glyph flame-g">
+            <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+              <path fill="currentColor" d="M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm3 8h10v2H7v-2Z"/>
+            </svg>
+          </span>
+          <span class="kicker">负债</span>
+          <button class="pencil" aria-label="编辑负债" onclick={openEditLiab}>
+            <svg viewBox="0 0 24 24" width="13" height="13">
+              <path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25ZM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83Z"/>
+            </svg>
+          </button>
+        </div>
+        <div class="bucket-amount num" class:neg={vm.liabilities > 0}>
+          {vm.liabilities > 0 ? "−" + yuan(vm.liabilities) : yuan(0)}
+        </div>
+      </section>
 
       <!-- ───── 被动收入 ───── -->
       <section class="vault-card passive">
@@ -250,10 +287,10 @@
       <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
         <path fill="currentColor" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm1 15h-2v-6h2v6Zm0-8h-2V7h2v2Z"/>
       </svg>
-      <span class="explain-title">净值 · 资产 · 现金</span>
+      <span class="explain-title">净值 · 资产 · 现金 · 负债</span>
     </div>
     <p class="explain-body">
-      净值 = 资产 + 现金, 是自动相加的结果, 不能直接修改。资产 (金色) 是锁定的钱, 比如定期/股票/基金; 现金 (蓝色) 是可花的钱。收入默认进现金, 支出从现金扣。资产和现金之间用「调拨」移动。
+      净值 = 资产 + 现金 − 负债, 是自动算出来的结果, 不能直接改。资产 (金色) 是暂时不动的钱, 比如定期 / 股票 / 基金; 现金 (蓝色) 是随时能花的钱; 负债 (红色) 是欠的钱, 比如房贷 / 车贷 / 信用卡, 会拉低净值、也会缩短自由天数。平时收入默认进现金, 支出从现金扣; 资产和现金之间用「调拨」互相搬。
     </p>
   </section>
 
@@ -289,6 +326,23 @@
       <p class="sheet-hint">可花的钱 — 活期 / 钱包余额 / 微信支付宝</p>
     </div>
     <button class="fg-btn" disabled={!editCashValid} onclick={saveEditCash}>确认</button>
+  </Sheet>
+
+  <!-- ───── 编辑负债 ───── -->
+  <Sheet open={showEditLiab} title="编辑负债" onClose={() => (showEditLiab = false)}>
+    <div class="fg-field">
+      <label class="fg-label" for="edit-liab-input">负债总额(元)</label>
+      <input
+        id="edit-liab-input"
+        class="fg-input fg-amount num"
+        type="text"
+        inputmode="decimal"
+        placeholder="0"
+        bind:value={editLiabAmount}
+      />
+      <p class="sheet-hint">欠的钱 — 房贷 / 车贷 / 信用卡 / 花呗等未还本金。填总额即可,会从净值扣减。</p>
+    </div>
+    <button class="fg-btn" disabled={!editLiabValid} onclick={saveEditLiab}>确认</button>
   </Sheet>
 
   <!-- ───── 添加被动收入 ───── -->
@@ -386,6 +440,12 @@
   .glyph.moss-g {
     color: var(--moss);
   }
+  .glyph.flame-g {
+    color: var(--flame);
+  }
+  .bucket.liab {
+    padding: var(--sp-md) var(--sp-xl);
+  }
   .pencil {
     margin-left: auto;
     display: inline-flex;
@@ -418,6 +478,13 @@
     line-height: 1;
     color: var(--ink);
     margin-top: var(--sp-md);
+  }
+  .bucket-amount.neg {
+    color: var(--flame);
+  }
+  .bucket.liab .bucket-amount {
+    font-size: 22px;
+    margin-top: var(--sp-sm);
   }
 
   /* ── 被动 ── */

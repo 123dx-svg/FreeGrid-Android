@@ -24,6 +24,7 @@ export interface Settings {
   profile: Profile;
   customExpenseCategories: string[]; // 用户自定义支出分类
   customIncomeSources: string[]; // 用户自定义收入来源
+  dashboardOrder: string[]; // 仪表盘卡片顺序(hero 之下的可重排块)
 }
 
 const KEY = "freegrid-settings-v1";
@@ -46,6 +47,7 @@ function defaults(): Settings {
     },
     customExpenseCategories: [],
     customIncomeSources: [],
+    dashboardOrder: ["grid", "stats", "actions"],
   };
 }
 
@@ -62,6 +64,10 @@ function loadInitial(): Settings {
           Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.trim().length > 0) : [];
         s.customExpenseCategories = strList(o.customExpenseCategories);
         s.customIncomeSources = strList(o.customIncomeSources);
+        if (Array.isArray(o.dashboardOrder)) {
+          const arr = strList(o.dashboardOrder);
+          if (arr.length) s.dashboardOrder = arr;
+        }
         if (o.profile && typeof o.profile === "object") {
           const p = o.profile;
           const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
@@ -102,6 +108,7 @@ $effect.root(() => {
       profile: { ...settings.profile },
       customExpenseCategories: [...settings.customExpenseCategories],
       customIncomeSources: [...settings.customIncomeSources],
+      dashboardOrder: [...settings.dashboardOrder],
     };
     try {
       localStorage.setItem(KEY, JSON.stringify(snap));

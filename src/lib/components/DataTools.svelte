@@ -1,8 +1,11 @@
 <script lang="ts">
   // 数据 · 备份与导入 —— 从资产页迁来的全 app 级数据工具(导出/导入/AI提示词/清空)。
   // 独立组件,单一来源;供设置页挂载。
-  import { store, exportJSONString, importBackup, mergeBackup, clearAll } from "../store.svelte";
+  import { store, exportJSONString, exportJSONStringForYear, importBackup, mergeBackup, clearAll } from "../store.svelte";
   import { EXPENSE_CATEGORIES } from "../models";
+  import { availableYears } from "../annual";
+  import { restoreBadgeMeta } from "../achievements.svelte";
+  import { loadFqResult, saveFqResult, type FqStored } from "../fq-test";
   import { parseImport, buildImportPrompt, type ParsedImport } from "../import-adapters";
   import { Capacitor } from "@capacitor/core";
   import { Filesystem, Directory, Encoding } from "@capacitor/filesystem";
@@ -35,7 +38,11 @@
   }
 
   function exportJSON() {
-    download(exportJSONString(), "freegrid-backup.json", "application/json");
+    if (exportYear === "all") {
+      download(exportJSONString(), "freegrid-backup.json", "application/json");
+    } else {
+      download(exportJSONStringForYear(exportYear), `freegrid-backup-${exportYear}.json`, "application/json");
+    }
   }
 
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -45,12 +52,18 @@
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   function exportCSV() {
+    const inScope = (d: Date) => exportYear === "all" || d.getFullYear() === exportYear;
     const rows = [["类型", "日期", "类别/来源", "金额", "备注"]];
-    for (const e of store.expenses) rows.push(["支出", ymd(e.date), e.category, String(e.amount), e.note ?? ""]);
-    for (const i of store.incomes) rows.push(["收入", ymd(i.date), i.source, String(i.amount), i.note ?? ""]);
+    for (const e of store.expenses) if (inScope(e.date)) rows.push(["支出", ymd(e.date), e.category, String(e.amount), e.note ?? ""]);
+    for (const i of store.incomes) if (inScope(i.date)) rows.push(["收入", ymd(i.date), i.source, String(i.amount), i.note ?? ""]);
     const body = rows.map((r) => r.map(csvCell).join(",")).join("\r\n");
-    download("\uFEFF" + body, "freegrid.csv", "text/csv;charset=utf-8");
+    const fname = exportYear === "all" ? "freegrid.csv" : `freegrid-${exportYear}.csv`;
+    download("\uFEFF" + body, fname, "text/csv;charset=utf-8");
   }
+
+  // ── 导出范围:全部 / 指定自然年 ──
+  const years = $derived(availableYears(store.expenses, store.incomes));
+  let exportYear = $state<number | "all">("all");
 
   // ── 导入:解析 → 弹「合并/替换」──
   let fileInput = $state<HTMLInputElement | null>(null);
@@ -88,6 +101,15 @@
     } else {
       const r = mergeBackup(res.backup);
       importMsg = `已合并 ${r.added} 笔${r.skipped ? ` · 跳过重复 ${r.skipped}` : ""}`;
+    }
+    // 恢复 app_meta:徽章按并集(取更早时间戳)、财商仅在本机无存档时补上(不覆盖)
+    const meta = res.backup.app_meta;
+    if (meta) {
+      restoreBadgeMeta(meta.badges ?? null);
+      const fq = meta.fq as FqStored | undefined;
+      if (fq && typeof fq.code === "string" && Array.isArray(fq.leans) && !loadFqResult()) {
+        saveFqResult(fq);
+      }
     }
     pendingImport = null;
     setTimeout(() => (importMsg = ""), 3500);
@@ -133,6 +155,20 @@
 </script>
 
 <div class="dt">
+  {#if years.length}
+    <div class="export-scope">
+      <span class="scope-label">导出范围</span>
+      <div class="scope-chips">
+        <button class="scope-chip" class:on={exportYear === "all"} onclick={() => (exportYear = "all")}>全部</button>
+        {#each years as y (y)}
+          <button class="scope-chip num" class:on={exportYear === y} onclick={() => (exportYear = y)}>{y}</button>
+        {/each}
+      </div>
+    </div>
+    {#if exportYear !== "all"}
+      <p class="scope-hint">仅导出 {exportYear} 年的流水(不含资产 / 被动收入);回导时建议用「合并」。</p>
+    {/if}
+  {/if}
   <div class="data-btns">
     <button class="vbtn data-out" onclick={exportCSV}>
       <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M4 4h16v16H4V4Zm2 4v3h5V8H6Zm7 0v3h5V8h-5Zm-7 5v3h5v-3H6Zm7 0v3h5v-3h-5Z" /></svg>
@@ -200,6 +236,50 @@
     display: flex;
     flex-direction: column;
     gap: var(--sp-md);
+  }
+  .export-scope {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-sm);
+    flex-wrap: wrap;
+  }
+  .scope-label {
+    font-size: 12px;
+    color: var(--ink-faint);
+    flex: 0 0 auto;
+  }
+  .scope-chips {
+    display: flex;
+    gap: 6px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .scope-chips::-webkit-scrollbar {
+    display: none;
+  }
+  .scope-chip {
+    flex: 0 0 auto;
+    font-size: 13px;
+    padding: 5px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--hairline);
+    background: var(--mist);
+    color: var(--ink-muted);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .scope-chip.on {
+    background: color-mix(in srgb, var(--sky) 18%, transparent);
+    border-color: var(--sky);
+    color: var(--sky-deep);
+    font-weight: 600;
+  }
+  .scope-hint {
+    font-size: 12px;
+    color: var(--ink-faint);
+    margin: -2px 0 2px;
+    line-height: 1.5;
   }
   .vbtn {
     font-family: var(--font-rounded);

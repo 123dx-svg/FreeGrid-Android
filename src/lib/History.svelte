@@ -4,6 +4,7 @@
   import DonutChart from "./components/DonutChart.svelte";
   import BarChart from "./components/BarChart.svelte";
   import { buildAnnualReport, buildNarrative, availableYears, type Scope } from "./annual";
+  import { markBadgeEvent } from "./achievements.svelte";
 
   // ── 数据:中央响应式 store,本屏只做合并/排序/分组,不碰任何 freedom-math ──
   // 归一成扁平交易形状,行模板单分支即可
@@ -257,6 +258,11 @@
   let showReport = $state(false);
   let reportTab = $state<"data" | "story">("data");
   let advOpen = $state(false);
+  // 打开年报:解锁「年度回望」徽章
+  function openReport() {
+    showReport = true;
+    markBadgeEvent("viewed_annual");
+  }
   // 关闭年报时复位到默认(数据看板 · 进阶收起)
   $effect(() => {
     if (!showReport) {
@@ -307,7 +313,7 @@
       <h1>收支流水</h1>
     </div>
     <div class="head-actions">
-      <button class="report-btn" onclick={() => (showReport = true)}>
+      <button class="report-btn" onclick={openReport}>
         <svg viewBox="0 0 24 24" class="rep-ic"><path d="M5 3h10l4 4v14H5zM15 3v4h4M8 13h8M8 17h5M8 9h3" /></svg>
         <span>年报</span>
       </button>
@@ -363,7 +369,7 @@
         </div>
       </div>
 
-      <button class="ov-more" onclick={() => (showReport = true)}>查看完整年报 →</button>
+      <button class="ov-more" onclick={openReport}>查看完整年报 →</button>
     </section>
   {/if}
 
@@ -436,7 +442,7 @@
   {:else}
     <ul class="list vault-card">
       {#each filteredTransactions as tx (tx.id)}
-        <li class="row">
+        <li class="row" data-month="{tx.date.getFullYear()} 年 {tx.date.getMonth() + 1} 月">
           <div class="row-left">
             <span class="row-name">{tx.name}</span>
             {#if tx.note}<span class="row-note">{tx.note}</span>{/if}

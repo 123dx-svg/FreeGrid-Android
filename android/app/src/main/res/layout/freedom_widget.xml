@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_sky">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:paddingLeft="14dp"
+        android:paddingRight="14dp"
+        android:paddingTop="14dp"
+        android:paddingBottom="12dp">
+
+        <!-- 中部:自由时间(可点开 App) -->
+        <LinearLayout
+            android:id="@+id/widget_center"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center">
+
+            <TextView
+                android:id="@+id/widget_kicker"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="FREEDOM"
+                android:textColor="#FF8B97AB"
+                android:textSize="10sp"
+                android:letterSpacing="0.16"
+                android:fontFamily="sans-serif-medium"
+                android:maxLines="1" />
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="bottom"
+                android:layout_marginTop="2dp">
+
+                <TextView
+                    android:id="@+id/widget_number"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="—"
+                    android:textColor="#FFF3F6FA"
+                    android:textSize="42sp"
+                    android:fontFamily="sans-serif-thin"
+                    android:includeFontPadding="false"
+                    android:maxLines="1" />
+
+                <TextView
+                    android:id="@+id/widget_unit"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="4dp"
+                    android:layout_marginBottom="6dp"
+                    android:text=""
+                    android:textColor="#FFB6C0CC"
+                    android:textSize="15sp"
+                    android:maxLines="1" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/widget_sub"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:text="打开 App 记一笔"
+                android:textColor="#FF7A8494"
+                android:textSize="10sp"
+                android:gravity="center"
+                android:maxLines="1" />
+        </LinearLayout>
+
+        <!-- 底部:轻量快捷记账 -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+            <TextView
+                android:id="@+id/widget_btn_expense"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/widget_btn_expense"
+                android:text="− 支出"
+                android:textColor="#FFF0A594"
+                android:textSize="11sp"
+                android:paddingLeft="12dp"
+                android:paddingRight="12dp"
+                android:paddingTop="5dp"
+                android:paddingBottom="5dp"
+                android:maxLines="1" />
+
+            <TextView
+                android:id="@+id/widget_btn_income"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:background="@drawable/widget_btn_income"
+                android:text="+ 收入"
+                android:textColor="#FFA9CBEC"
+                android:textSize="11sp"
+                android:paddingLeft="12dp"
+                android:paddingRight="12dp"
+                android:paddingTop="5dp"
+                android:paddingBottom="5dp"
+                android:maxLines="1" />
+        </LinearLayout>
+
+    </LinearLayout>
+</FrameLayout>

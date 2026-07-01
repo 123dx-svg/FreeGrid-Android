@@ -244,6 +244,47 @@
 
   const dailyStr = $derived(vm.dailyBurn.toFixed(1));
   const passiveStr = $derived(`${Math.round(vm.passiveRatio * 100)}%`);
+
+  // ── 仪表盘布局:hero 固定,下方 grid/stats/actions 可重排 ──
+  const KNOWN_BLOCKS = ["grid", "stats", "actions"];
+  function normalizeOrder(o: string[]): string[] {
+    const seen = new Set<string>();
+    const res = o.filter((x) => KNOWN_BLOCKS.includes(x) && !seen.has(x) && (seen.add(x), true));
+    for (const k of KNOWN_BLOCKS) if (!res.includes(k)) res.push(k);
+    return res;
+  }
+  const order = $derived(normalizeOrder(settings.dashboardOrder ?? []));
+  let editLayout = $state(false);
+
+  function moveBlock(id: string, dir: -1 | 1) {
+    const o = [...order];
+    const i = o.indexOf(id);
+    const j = i + dir;
+    if (j < 0 || j >= o.length) return;
+    [o[i], o[j]] = [o[j], o[i]];
+    settings.dashboardOrder = o;
+  }
+
+  const LAYOUT_PRESETS = [
+    { id: "default", label: "默认", order: ["grid", "stats", "actions"] },
+    { id: "data", label: "数据优先", order: ["stats", "grid", "actions"] },
+    { id: "quick", label: "记账优先", order: ["actions", "grid", "stats"] },
+  ];
+  function applyPreset(o: string[]) {
+    settings.dashboardOrder = [...o];
+  }
+  const activePreset = $derived(LAYOUT_PRESETS.find((p) => p.order.join() === order.join())?.id ?? "");
+
+  // 长按进入编辑态(移动/滚动会取消)
+  let lpTimer: ReturnType<typeof setTimeout> | undefined;
+  function lpDown() {
+    if (editLayout) return;
+    lpTimer = setTimeout(() => (editLayout = true), 550);
+  }
+  function lpCancel() {
+    if (lpTimer) clearTimeout(lpTimer);
+    lpTimer = undefined;
+  }
 </script>
 
 <div class="dash">
@@ -340,50 +381,89 @@
     </div>
   </section>
 
-  <!-- ───── Freedom Grid ───── -->
-  <section class="vault-card">
-    <div class="card-head">
-      <span class="kicker">FREEDOM GRID</span>
-      <span class="muted num">{vm.grid.count} {gridUnitLabel}</span>
+  {#if editLayout}
+    <div class="layout-bar">
+      <div class="layout-bar-top">
+        <span class="layout-bar-title">调整布局</span>
+        <button class="layout-done" onclick={() => (editLayout = false)}>完成</button>
+      </div>
+      <div class="layout-presets">
+        <span class="lp-label">预设</span>
+        {#each LAYOUT_PRESETS as p (p.id)}
+          <button class="lp-chip" class:on={activePreset === p.id} onclick={() => applyPreset(p.order)}>{p.label}</button>
+        {/each}
+      </div>
     </div>
-    <div class="grid-wrap">
-      <FreedomGrid grid={vm.grid} />
-    </div>
-    <div class="legend">
-      <span class="lg"><i class="dot gold"></i>资产</span>
-      <span class="lg"><i class="dot blue"></i>现金</span>
-      <span class="muted spacer">每格 = 1 {gridUnitLabel}自由</span>
-    </div>
-  </section>
+  {/if}
 
-  <!-- ───── Stats ───── -->
-  <section class="stats">
-    <div class="vault-card stat">
-      <div class="stat-num num">{dailyStr}</div>
-      <hr class="hairline soft" />
-      <span class="kicker">DAILY</span>
-      <span class="stat-sub">元/天</span>
-    </div>
-    <div class="vault-card stat">
-      <div class="stat-num num">{passiveStr}</div>
-      <hr class="hairline soft" />
-      <span class="kicker">PASSIVE</span>
-      <span class="stat-sub">被动覆盖</span>
-    </div>
-    <div class="vault-card stat">
-      <div class="stat-num num">{vm.trackDays}</div>
-      <hr class="hairline soft" />
-      <span class="kicker">TRACK</span>
-      <span class="stat-sub">天追踪</span>
-    </div>
-  </section>
+  {#each order as id (id)}
+    <div
+      class="dblock"
+      class:editing={editLayout}
+      onpointerdown={id !== "actions" ? lpDown : undefined}
+      onpointerup={lpCancel}
+      onpointermove={lpCancel}
+      onpointercancel={lpCancel}
+    >
+      {#if editLayout}
+        <div class="dblock-handles">
+          <button class="dbh" aria-label="上移" disabled={order[0] === id} onclick={() => moveBlock(id, -1)}>↑</button>
+          <button class="dbh" aria-label="下移" disabled={order[order.length - 1] === id} onclick={() => moveBlock(id, 1)}>↓</button>
+        </div>
+      {/if}
 
-  <!-- ───── Actions ───── -->
-  <section class="actions">
-    <button class="vbtn flame" onclick={() => (showExpense = true)}>− 记支出</button>
-    <button class="vbtn sky" onclick={() => (showIncome = true)}>+ 记收入</button>
-    <button class="vbtn ghost" onclick={() => (showSim = true)}>⚡ 模拟一笔 · 看决策影响 →</button>
-  </section>
+      {#if id === "grid"}
+        <!-- ───── Freedom Grid ───── -->
+        <section class="vault-card">
+          <div class="card-head">
+            <span class="kicker">FREEDOM GRID</span>
+            <span class="muted num">{vm.grid.count} {gridUnitLabel}</span>
+          </div>
+          <div class="grid-wrap">
+            <FreedomGrid grid={vm.grid} />
+          </div>
+          <div class="legend">
+            <span class="lg"><i class="dot gold"></i>资产</span>
+            <span class="lg"><i class="dot blue"></i>现金</span>
+            <span class="muted spacer">每格 = 1 {gridUnitLabel}自由</span>
+          </div>
+        </section>
+      {:else if id === "stats"}
+        <!-- ───── Stats ───── -->
+        <section class="stats">
+          <div class="vault-card stat">
+            <div class="stat-num num">{dailyStr}</div>
+            <hr class="hairline soft" />
+            <span class="kicker">DAILY</span>
+            <span class="stat-sub">元/天</span>
+          </div>
+          <div class="vault-card stat">
+            <div class="stat-num num">{passiveStr}</div>
+            <hr class="hairline soft" />
+            <span class="kicker">PASSIVE</span>
+            <span class="stat-sub">被动覆盖</span>
+          </div>
+          <div class="vault-card stat">
+            <div class="stat-num num">{vm.trackDays}</div>
+            <hr class="hairline soft" />
+            <span class="kicker">TRACK</span>
+            <span class="stat-sub">天追踪</span>
+          </div>
+        </section>
+      {:else if id === "actions"}
+        <!-- ───── Actions ───── -->
+        <section class="actions">
+          <button class="vbtn flame" onclick={() => (showExpense = true)}>− 记支出</button>
+          <button class="vbtn sky" onclick={() => (showIncome = true)}>+ 记收入</button>
+          <button class="vbtn ghost" onclick={() => (showSim = true)}>⚡ 模拟一笔 · 看决策影响 →</button>
+        </section>
+      {/if}
+    </div>
+  {/each}
+
+  {#if !editLayout}
+    <button class="layout-edit-btn" onclick={() => (editLayout = true)}>⇅ 调整布局</button>
+  {/if}
   {/if}
 </div>
 
@@ -658,13 +738,23 @@
       color-mix(in srgb, var(--paper) 50%, transparent) 100%
     );
   }
-  /* ── 星点夜空层(深浅双主题 + 轻微闪烁)── */
+  /* ── 星点夜空层(深浅双主题 + 视差漂移 + 多档闪烁)── */
   .stars {
     position: absolute;
     inset: 0;
     overflow: hidden;
     pointer-events: none;
     z-index: 0;
+    animation: star-drift 46s ease-in-out infinite alternate;
+    will-change: transform;
+  }
+  @keyframes star-drift {
+    from {
+      transform: translate3d(0, 0, 0);
+    }
+    to {
+      transform: translate3d(-9px, 6px, 0);
+    }
   }
   .star {
     position: absolute;
@@ -678,6 +768,7 @@
     animation-name: twinkle;
     animation-timing-function: ease-in-out;
     animation-iteration-count: infinite;
+    will-change: opacity, transform;
   }
   .star.s1 {
     width: 1px;
@@ -687,23 +778,48 @@
     width: 2px;
     height: 2px;
   }
+  /* 每隔几颗给一颗更亮、脉冲更强的"亮星",打破单调 */
+  .star:nth-child(4n) {
+    animation-name: twinkle-bright;
+    box-shadow: 0 0 5px color-mix(in srgb, var(--sky-deep) 55%, transparent);
+  }
   :global(:root[data-theme="dark"]) .star {
     background: color-mix(in srgb, #fff 75%, var(--sky));
     box-shadow: 0 0 3px color-mix(in srgb, var(--sky) 55%, transparent);
   }
+  :global(:root[data-theme="dark"]) .star:nth-child(4n) {
+    box-shadow: 0 0 6px color-mix(in srgb, #fff 60%, var(--sky));
+  }
   @keyframes twinkle {
     0%,
     100% {
-      opacity: 0.28;
+      opacity: 0.22;
+      transform: scale(0.82);
     }
     50% {
       opacity: 0.8;
+      transform: scale(1.08);
+    }
+  }
+  @keyframes twinkle-bright {
+    0%,
+    100% {
+      opacity: 0.4;
+      transform: scale(1);
+    }
+    45% {
+      opacity: 1;
+      transform: scale(1.45);
     }
   }
   @media (prefers-reduced-motion: reduce) {
+    .stars {
+      animation: none;
+    }
     .star {
       animation: none;
       opacity: 0.5;
+      transform: none;
     }
   }
   /* 流星层:深/浅双主题都显示(颜色随主题切换) */
@@ -882,8 +998,8 @@
 
   /* ── stats ── */
   .stats {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    display: flex;
+    flex-direction: column;
     gap: var(--sp-lg);
   }
   .stat {
@@ -1104,12 +1220,138 @@
     .hero-side {
       align-items: flex-start;
     }
-    .stats,
     .actions {
       grid-template-columns: 1fr;
     }
     .hero-number {
       font-size: 100px;
     }
+  }
+
+  /* ── 布局编辑(拖动重排)── */
+  .dblock {
+    position: relative;
+  }
+  .dblock.editing {
+    outline: 1.5px dashed color-mix(in srgb, var(--sky) 55%, transparent);
+    outline-offset: 3px;
+    border-radius: var(--radius-card);
+    animation: dblock-wiggle 0.4s ease-in-out infinite alternate;
+  }
+  .dblock.editing > section {
+    pointer-events: none;
+  }
+  @keyframes dblock-wiggle {
+    from {
+      transform: rotate(-0.35deg);
+    }
+    to {
+      transform: rotate(0.35deg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dblock.editing {
+      animation: none;
+    }
+  }
+  .dblock-handles {
+    position: absolute;
+    top: -10px;
+    right: 8px;
+    z-index: 3;
+    display: flex;
+    gap: 6px;
+  }
+  .dbh {
+    width: 34px;
+    height: 34px;
+    border-radius: 999px;
+    border: 1px solid var(--sky);
+    background: var(--mist);
+    color: var(--sky-deep);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: 0 4px 12px -4px color-mix(in srgb, #000 50%, transparent);
+  }
+  .dbh:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+  .layout-bar {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-md);
+    padding: var(--sp-md) var(--sp-lg);
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--sky) 10%, var(--mist2));
+    border: 1px solid color-mix(in srgb, var(--sky) 30%, var(--hairline));
+  }
+  .layout-bar-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .layout-bar-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .layout-done {
+    border: 0;
+    background: var(--sky-deep);
+    color: #fff;
+    font-family: var(--font-rounded);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 7px 16px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .layout-presets {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .lp-label {
+    font-size: 12px;
+    color: var(--ink-faint);
+    margin-right: 2px;
+  }
+  .lp-chip {
+    font-size: 13px;
+    padding: 6px 13px;
+    border-radius: 999px;
+    border: 1px solid var(--hairline);
+    background: var(--mist);
+    color: var(--ink-muted);
+    cursor: pointer;
+  }
+  .lp-chip.on {
+    background: color-mix(in srgb, var(--sky) 18%, transparent);
+    border-color: var(--sky);
+    color: var(--sky-deep);
+    font-weight: 600;
+  }
+  .layout-edit-btn {
+    align-self: center;
+    margin-top: var(--sp-xs);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border-radius: 999px;
+    border: 1px solid var(--hairline);
+    background: transparent;
+    color: var(--ink-faint);
+    font-family: var(--font-rounded);
+    font-size: 13px;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease;
+  }
+  .layout-edit-btn:hover {
+    color: var(--ink);
+    border-color: var(--ink-ghost);
   }
 </style>

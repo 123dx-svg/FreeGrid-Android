@@ -46,7 +46,7 @@
 - **release keystore**：`F:\AIGenerate\APP\keystore\freegrid-release.jks`（仓库外，有效期 ~27 年，别名 `freegrid`）。
 - **口令**：在 `android/keystore.properties`（**已 gitignore，不入库**）。证书 `CN=FreeGrid`，SHA-256 指纹 `0ce657932cd56ec583fd081812d2870a3c50ed9f655d33abadd5dadab6405d87`。
 - **铁律 1**：`freegrid-release.jks` + `keystore.properties` **必须异地备份**。丢了 = 所有老用户永远无法再升级。
-- **铁律 2**：每次发布 **`versionCode` 必须 +1**（在 `android/app/build.gradle`）。当前已到 28（v2.17）。
+- **铁律 2**：每次发布 **`versionCode` 必须 +1**（在 `android/app/build.gradle`）。当前已到 38（v2.25）。
 - **铁律 3**：**debug 签名与 release 签名互不兼容**。给用户/装真机**永远用 release 版**（`build-release.bat`）。debug↔release 互切必须卸载=丢数据。
 - **铁律 4**：升级用 `adb install -r <release-apk>`（不卸载，保数据）。✅ 已实测 vc2→vc3 数据保留。
 - 用户的**小米 14 Pro 从第一次就装 release 版**，否则将来切 release 要卸载丢数据。
@@ -60,6 +60,59 @@
 - 未做：原生存储镜像兜底、版本化 schema 迁移（改数据结构时需补"读旧版→迁移"）。
 
 ## 已完成的适配
+- ✅ 小部件美化 + 快捷记账(vc38/v2.25):
+  - **星空/流星背景**:小部件不能做动画(RemoteViews 无动画),改用**静态 PNG 背景**呼应 hero 夜空——`tools` 里用 GDI+(PowerShell System.Drawing)生成 `res/drawable-nodpi/widget_sky.png`(480×480 圆角方形:深蓝渐变 + 顶部微光 + 55 颗星点 + 3 道流星带亮头)。`freedom_widget.xml` 根 `FrameLayout` 背景换成它(API 31+ 系统还会自动圆角)。
+  - **圆角**:PNG 烘焙圆角 + 系统自动圆角,视觉是圆角方形卡(2×2,近正方)。
+  - **快捷记账按钮**:底部两枚低调 pill「− 支出」/「+ 收入」(`widget_btn_expense/income.xml` 半透明橙/蓝底+描边),复用**已有桌面快捷方式深链** `freegrid://record/expense|income` → `FreedomWidgetProvider` 给两个按钮各设 PendingIntent(`ACTION_VIEW`+setClass MainActivity,requestCode 1/2),中部区域点击=打开 App(requestCode 0)。
+  - 真机实测:小部件显示星空+流星+FREEDOM DAYS/143 天/见底日 + 两枚快捷按钮;点「− 支出」直接打开记支出面板。`build-release` 内含 cap sync 带入原生。
+- ✅ 桌面小部件「自由时间」+ demo 数据重导入(vc37/v2.25):
+  - **方形桌面小部件(2×2)**:把首页 hero 的自由时间做成标准 Android App Widget。数据流:Web 侧 `src/lib/widget.ts` `updateFreedomWidget(vm)`(仅原生,所有格式化在 JS——`state/kicker/number/unit/sub` 快照)→ `App.svelte` `$effect`(随 store 变)调用 → Capacitor 插件 `FreedomWidgetPlugin`(`@CapacitorPlugin(name="FreedomWidget")`)写 `SharedPreferences("freegrid_widget")` + `AppWidgetManager.updateAppWidget` 刷新 → `FreedomWidgetProvider`(AppWidgetProvider)`onUpdate` 读 prefs 填 RemoteViews。**快照式**:记账/改资产/导入后 App 主动推,小部件跟着变;App 不开时数字不变。点击小部件 = 打开 App。
+    - 原生新增:`res/layout/freedom_widget.xml`(深色圆角卡,呼应 hero:kicker + 大数字 sans-serif-thin + 单位 + 副标题)、`res/drawable/widget_bg.xml`、`res/xml/freedom_widget_info.xml`(2×2 `targetCellWidth/Height`、`updatePeriodMillis=0`)、`FreedomWidgetProvider.java`、`FreedomWidgetPlugin.java`、`MainActivity.java`(`registerPlugin(FreedomWidgetPlugin.class)`)、`AndroidManifest.xml`(`<receiver .FreedomWidgetProvider>` + appwidget meta)、`strings.xml`(`widget_name`=自由时间 / `widget_desc`,无 BOM)。
+    - 状态:正常=kicker(FREEDOM DAYS/MONTHS/YEARS)+ 数字 + 单位 + 「约X月Y日见底」;∞=「∞ 你已财富自由」;空=「打开 App 记一笔」。
+    - 真机(模拟器)实测:`dumpsys appwidget` 见 provider 注册;小部件面板底部「自由日记 · 自由时间 · 2×2」;拖到桌面渲染实时「FREEDOM DAYS / 143 天 / 约 11 月 21 日见底」(与 hero 一致);点击打开 App。
+    - ⚠️ **负一屏**:标准 App Widget **进不了小米/华为的私有「负一屏」卡片**(需厂商私有 SDK);覆盖范围=主屏 + 系统小部件面板(绝大多数桌面可识别放置)。
+    - 红线:仅新增 `SharedPreferences("freegrid_widget")`(与 localStorage 无关);包名/数据键/前缀不动。
+  - **demo 数据重导入工具**:`tools/gen-demo-backup.mjs` 复刻 `src/lib/demo.ts` 的 `makeDemoData`(1805 笔支出 + 4 笔收入 + 股票分红被动源 ¥1000/月 + 净值 5531)→ 输出 app 备份格式 `tools/freegrid-demo.json`。流程:`node tools/gen-demo-backup.mjs` → `adb push` 到 `/sdcard/Download/` → App 设置→数据→导入→替换。**注**:app 备份只存净值 total,导入后资产/现金分桶合并进现金(net 不变,金/蓝格配色略变),可用「调拨」还原。
+- ✅ 徽章墙折叠 + 完成测试即解锁 + 自由徽章守卫(vc36/v2.24):
+  - **徽章墙可折叠**(`BadgeWall.svelte`):23 枚网格太占竖向空间 → **默认收起**,只显示 count 头(N/总 + 分享)+ 一行**紧凑图标条**(全 23 枚 mini,已解锁在前、可横滑总览)+ 「展开全部 N 枚 ▾」;展开=带分组的大网格 + 「收起 ▴」。Check 页一屏可见到设置入口,不再长滚。真机实测:收起态紧凑、展开/收起正常。
+  - **「认识自己」改事件型**:原 `test:(a)=>a.fqDone`(数据型 → 老用户被静默 seed,重测看不到庆祝)→ 改 `event:"completed_fq"`,`FqTest.finish()` 调 `markBadgeEvent("completed_fq")`;`reconcileAchievements` 基线 seeding 时若 `input.fqDone` 则静默补上(兼容此前已测过的老用户)。这样**答完整套题当场解锁+弹庆祝**(与「年度回望」同一 markBadgeEvent→BadgeToast 路径)。
+  - **自由徽章守卫**:空数据新用户 `freedomDays=∞`(无消费→永不见底)会让自由类 4 枚(180/365/1095/3650)在基线被误点亮。给这 4 枚 test 加 `&& a.txCount > 0`(需已有记录才算数)。真机实测:`pm clear` 全新空数据 → 0/23(不再误亮),记录后才逐步点亮。
+  - `svelte-check` 0 error / 5 既有 warning。注:模拟器 `pm clear` 后 WebView 有几秒 input 丢事件的卡顿(强杀重启即恢复,非 app 问题)。
+- ✅ 去滚动条 + 成就徽章墙 + 题库随机化 + 跨设备迁移(vc35/v2.24):
+  - **① 去滚动条 + 流水悬浮**:`app.css` 全局 `::-webkit-scrollbar{display:none}` + `*{scrollbar-width:none}`(原 `width:10px` 经典滚动条占布局宽 → 居中内容被挤偏)。`App.svelte`(持 `main` 滚动)`onscroll`(rAF 节流):`tab==='history'` 且 `scrollTop>600` 浮右下 **「↑ 回顶」**(平滑回顶);`scrollTop>200` 用 `elementFromPoint(中点,132)` 探测视口顶部那行的 `data-month`(O(1),不遍历上百行)→ 顶部居中浮 **年月胶囊**,停 1s 淡出。History 行加 `data-month="YYYY 年 M 月"`。纯 transform/opacity。真机实测:上滑内容居中无灰条、胶囊「2026 年 6 月」、回顶按钮生效。
+  - **② 成就徽章墙(替换 8 项自检)**:新 `achievements.ts`(23 枚里程碑:记账天数 7/30/100/365、笔数 100/1000、储蓄率 >0/30/50%、净值 1/10/50/100 万、自由 180/365/1095/3650 天、被动 有/50/100%、完成财商测试、记录资产、看过年报)+ `achievements.svelte.ts`(runes 模块状态,独立 key `freegrid-badges-v1` 存 `{id:解锁ISO时间}`;**粘性只增不减**;`reconcileAchievements` 对账;**首次静默设基线**不弹;庆祝队列)。`BadgeWall.svelte`(分组网格,解锁彩色 emoji+点亮时间,未解锁灰锁;点徽章→详情 sheet+分享)接入 `Check.svelte`(删掉旧 8 项清单+其样式)。
+  - **解锁动画**:`BadgeToast.svelte` 全局浮层(挂 `App.svelte`),`App.svelte` 用 `$effect` 监听 store→`reconcileFromData`(记账/改资产/**导入**任何入口都即时对账);单枚=完整庆祝卡(图标 pop),多枚(含导入批量)=合并「🎉 解锁 N 枚」卡;点击进徽章墙;2.8s 自动消失;`prefers-reduced-motion` 只淡入。`FqTest.finish` 完测即时对账(「认识自己」即时点亮)。`History.openReport` → `markBadgeEvent('viewed_annual')`。真机实测:首次静默点亮 15/23、开年报弹「年度回望」单徽章庆祝、计数变 16/23。
+  - **徽章分享**:`fq-share.ts` 的 `svgToPngDataUrl` 导出复用;新 `badge-share.ts` 出**单枚徽章卡**(medal + emoji + 名/说明/点亮时间)与**整面成就墙长图**(网格,高度随数量)→ `sharePngDataUrl`(原生写 Cache PNG + `Share.share({files})`)。emoji 用 `Noto Color Emoji` 字体栈,rasterize 后彩色正常。真机实测:整墙「已点亮 16/23」+ 单枚「初来乍到」都出图分享成功。
+  - **③ 跨设备迁移(徽章+财商随备份)**:`models.ts` `BackupJSON` 加可选 `app_meta`(badges/fq)。`store.exportJSONString` 在**全部导出**时附 `app_meta`(徽章 `exportBadgeMeta` + `loadFqResult`);`toBackup`/本机 `freegrid-data-v1` 不加;**指定年份导出仍纯交易**。`DataTools.doImport` 导入后 `restoreBadgeMeta`(并集取更早时戳)+ 财商仅在本机无存档时补上。iOS/web 忽略未知字段 → 向后兼容,**AI 提示词 `buildImportPrompt` 一字不改**(AI 只产 `transactions`,不碰 `app_meta`)。
+  - **④ 题库 120 + 每次随机抽 50**:`fq-test.ts` `QUESTIONS` 扩到 **120 题**(全 3 选项、行为学+生活化);新 `sampleQuestions(50)` 按维度分层随机(4 维各 ~12–13,保证 16 型分型)+ 洗牌;`scoreAnswers(answers, questions)`/`buildResult(answers, questions, metrics)` 加题目列表参(仅 `FqTest` 一处调用)。`FqTest.beginQuiz` 抽样存 state 全程用;测试固定 50。文案改"题库 120 · 每次随机 50"。真机实测:重测「1/50」、首题随机、答满 50 正确出型(龟速存钱罐 55)。
+  - `svelte-check` 0 error / 5 既有 warning。**红线不破**:仅新增 `freegrid-badges-v1` 键 + 备份可选 `app_meta` 字段(向后兼容);包名/其余 key/`freegrid-` 前缀不动。
+- ✅ 分享人格卡取消不再弹文字(vc34/v2.23):`FqTest.share()` 原逻辑把 `sharePersonalityCard` 整体包在一个 try,用户在系统分享面板**取消**时 `Share.share` 会 reject → 被当成"出图失败" → 又弹了一次纯文字分享。修复:拆成两步——先 `renderPersonalityPng`(仅这步失败才回退文字),再 `sharePngDataUrl`(分享阶段的取消/失败**单独 catch 静默**,不做文字兜底)。`fq-share.ts` 相应拆出 `sharePngDataUrl(dataUrl, caption)`(不含兜底)替代原 `sharePersonalityCard`。真机实测:分享→出图面板→取消→直接回人格卡,不再二次弹文字。
+- ✅ 四项体验修复(vc33/v2.22):
+  - **饼图不再拦截纵向滚动 + 双向连线**(`DonutChart.svelte`,流水概览卡 + 年报 sheet 共用即全覆盖):原 `touch-action:none`+`onpointerdown` 立刻 `preventDefault` → 手指一碰就卡住滚动。改 `pan-y` + **意图判定**(按下起 180ms 长按计时器,触发前纵向/横向移动 >10px 判为滚动、取消并放行原生滚;计时到才捕获指针、显示读数+连线,之后 move 才 scrub)。**双向**:图例每个 `<li>` 加同款长按处理 → 按住图例行 → 高亮对应扇区(加粗+其余变暗)+ 中心读数切换 + 画同一条折线(`computeLeader` 本就是扇区↔图例,反向天然成立);桌面端 hover 图例即预览。真机实测:饼图上快速上滑正常滚动到流水列表;长按图例「车贷」→ 扇区高亮+反向折线+中心显示车贷金额。
+  - **仪表盘 stats 纵向堆叠**(`Dashboard.svelte`):`.stats` 由 `grid-template-columns:repeat(3,1fr)` → `flex column`,DAILY/PASSIVE/TRACK 三张 vault-card 全宽竖排。**顺带修了既有 CSS 括号错乱**:`@media(max-width:720px)` 从 hero 一直没闭合,把 vc31 的 `.dblock`/布局编辑全套样式误关进 <720px 媒体查询(手机 <720 所以能用、桌面失效)→ 重新理顺:媒体查询只留 hero/actions/hero-number,dblock 系列提到全局。
+  - **资产说明补负债**(`Assets.svelte`):标题「净值 · 资产 · 现金」→「净值 · 资产 · 现金 · 负债」;正文润色(资产=暂时不动的钱、现金=随时能花、负债=欠的钱会拉低净值/缩短自由天数)。
+  - **分享人格=卡片截图**(新 `fq-share.ts` + `FqTest.svelte`):原来只分享文字。新 `fq-share.ts` 零依赖生成海报——`mix()` 用 JS 实现 `color-mix(in srgb,…)`(预乘 alpha,含 transparent),把 `FqEmblem` 的 16 变体几何**内联着色**输出 SVG(隔离图像里也不变黑),`posterSVG` 拼 1080×1350 海报(家族色底+小精灵+型名+chips+tagline+财商分),`svgToPngDataUrl` 经 `Image(data:svg)`→`canvas.toDataURL` 转 PNG。`sharePersonalityCard`:原生写 Cache PNG(`Filesystem` base64)+`Share.share({files:[uri]})`;web 走 `navigator.share({files})` 或下载。`share()` 首选出图、失败兜底文字。真机实测:分享面板显示「Sharing image」+ 卡片缩略图(青蓝龟壳精灵着色正确 + 财商分 56 + tagline)。
+  - **导出可选年份**(`DataTools.svelte` + `store.exportJSONStringForYear`):导出区顶部加「导出范围」chip(全部 + `availableYears()` 各年,横滑)。CSV 按 `getFullYear()` 过滤,文件名 `freegrid-2025.csv`;JSON 全部=整包(含资产/被动),**指定年份=仅该年流水**(`passive_sources:[]`、assets 置最小、first_record_date=该年最早),文件名 `freegrid-backup-2025.json`,提示回导建议「合并」。真机实测:选 2025 → 导出 → 分享面板显示 `freegrid-backup-2025.json`。
+  - `svelte-check` 0 error / 5 既有 warning。
+- ✅ 财商测试全 3 选项 + 生活化行为学题(vc32/v2.21):`fq-test.ts` 的 `QUESTIONS` 由原 50 题(多数 2 选项)重写为 **51 题、每题 3 选项**。计分模型不变(每选项映射 `axis/pole/fq`,fq 上限 2,`scoreAnswers` 原样兼容任意选项数)——第 3 项多为"中间/看情况"档。
+  - **四维配额**:收入 11 / 风险 12 / 时间 14 / 决策 14(保证 16 型分型)。
+  - **新增 13 道行为学题**(措辞刻意生活化、不学术):现时偏好(现在500 vs 一个月600)、沉没成本(烂片走不走)、锚定(原价划掉的打折)、心理账户(红包/中奖怎么花)、框架效应(每天一杯奶茶钱的分期)、相对性(为省5块跑远路)、办卡双曲贴现(年卡vs月卡)、凑单免运费、购物车冷静期、从众追高、泡沫警惕、高息陷阱、攀比换手机。分散挂在 决策/时间/风险 三维,强化对应极。
+  - **文案**:intro 用动态 `{total}`(显示"51 道生活小题");`Check.svelte` 入口卡"51 题";文件头注释同步。
+  - 真机实测:入口→结果卡→翻面→重新测试→答题界面每题 **3 选项 + 高亮 + 上一题**、自动翻页、行为学题(现时偏好 25/51)正常渲染、答满 51 题正确算出新型(龟速存钱罐·省稳远感、家族色青蓝、真实记账并入 -3 分)。`svelte-check` 0 错误。
+- ✅ 仪表盘布局编辑 + 预设(vc31/v2.20):hero(FREEDOM MONTHS)**钉住不可动**;下方三块 `grid`(FREEDOM GRID)/`stats`(DAILY·PASSIVE·TRACK 行)/`actions`(记账按钮)**可重排**。
+  - **进编辑态**:长按任一可排卡片(grid/stats,550ms,滚动/移动取消)**或**底部「⇅ 调整布局」按钮。编辑态:卡片虚线框+轻微 wiggle、右上 ↑↓ 手柄、顶部工具栏(预设 chip + 完成)、卡片内容 `pointer-events:none` 防误触。
+  - **预设**:默认(grid/stats/actions)/ 数据优先(stats/grid/actions)/ 记账优先(actions/grid/stats),一键套用并高亮当前匹配项。
+  - **持久化**:`settings.dashboardOrder[]`(`freegrid-settings-v1`);`Dashboard.svelte` 按 `normalizeOrder`(补缺/去重/丢未知)后的 order `{#each}` 渲染三块。真机实测:长按/按钮进编辑、↑↓ 重排、预设切换、完成退出、冷重启顺序保留、`prefers-reduced-motion` 关 wiggle。`svelte-check` 0 错误。
+- ✅ 资产加「负债」(vc30/v2.19,单一负债总额):`净值 = 资产 + 现金 − 负债`。
+  - `models.ts`:`UserAssets` 加 `liabilities`;`netWorth(a)` 减去 `liabilities`(参数改宽松对象、向后兼容);`BackupAssetsJSON` 加 `liabilities?`。
+  - `store.svelte.ts`:store.assets 初始化 + applyEmpty 加 `liabilities:0`;`toBackup`/`fromBackup` 往返(`liabilities: x||undefined` / `?? 0`,经 `freegrid-data-v1` 主数据持久化,无需动 buckets);`updateBucket` 加 `"liabilities"` 分支。`derive.ts` 暴露 `vm.liabilities`。
+  - `freedom-math.ts`:`gridState` 加 `liabilities` 参(总格数按 `net=gross−负债` 算,金/蓝配色仍按 资产/现金 gross 比例)→ **FREEDOM GRID 也扣负债、与顶部一致**。`freedomDays` 早已 `Math.max(0,净值)`,净值变负归 0。
+  - `Assets.svelte`:双桶下加**全宽负债桶**(红 flame 图标 + 负值红字 `−¥x` + 铅笔)+ 编辑负债 Sheet(镜像编辑现金)+ 说明改「净值=资产+现金−负债」。年报净值(`netWorth`)也自动含负债。
+  - 真机实测:负债 5 万 → 净值 22 万→17 万、自由 30→23 月、格子 30→23、`svelte-check` 0 错、freedom-math 单测 14/14。
+- ✅ 去点击蓝框 + 星空动效(vc29/v2.18):
+  - **点击淡蓝框**(WebView 触摸高亮,看着像调试框):`src/app.css` 全局 `* { -webkit-tap-highlight-color: transparent }` + `button/a/[role=button]` 触摸时 `:focus:not(:focus-visible){outline:none}`(**保留键盘 `:focus-visible` 焦点环**,不伤无障碍)+ 可点元素 `user-select:none`+`-webkit-touch-callout:none`(输入框不受影响)+ `:active{opacity:.72}` 轻按下反馈(去掉高亮后仍跟手)。
+  - **FREEDOM MONTHS 星空**(原来只原地闪烁、单调):`Dashboard.svelte` 的 `.stars` 层加**缓慢视差漂移**(`star-drift` 46s alternate,透明层漂移无边缝)+ twinkle 改**透明度+微缩放呼吸** + `:nth-child(4n)` 一批**更亮脉冲亮星**(`twinkle-bright` 到 opacity1/scale1.45)。纯 transform/opacity,`prefers-reduced-motion` 关漂移与动画。流星层不变。
+- ✅ 设置入口置底(vc28/v2.17):`Check.svelte` 把「设置」入口卡从财商卡与自检清单之间挪到**自检清单之后**(低频工具置尾,内容先行)。
 - ✅ 设置重构为「抽屉式」(vc27/v2.16):原折叠版(vc26)顶层是一堆 11px mono 灰小字分区头,层级倒置(版本号比分区头还大)、像灰字soup、"个人档案·设置"标题与"个人档案"分区撞名 → 一眼看着混乱、字号不协调。重构为**顶层干净设置行列表 + 点行滑入子 Sheet**:
   - **顶层**(`Sheet title="设置"`):每行 = 线性图标(人/滑杆/标签/数据库/info)+ 标题(15px `--ink` 圆体,视觉主体)+ 右侧状态值(13px 灰:已填/深色/N项)+ chevron,统一 54px 行高 + hairline 分隔。**关于行不可点、右侧直显版本**(安卓 `getInfo` 的 `v2.16 (27)`);底部一行「纯本地·零网络」footer;桌面端更新按钮 `{#if isTauri}`。
   - **子页**:个人档案 / APP 个性化 / 分类管理(仅有自定义时) / 数据·备份与导入,各是一个 `<Sheet>`(复用组件,标题=分区名,× + 遮罩 + 物理返回键均由 overlay 栈处理层级)。点顶层行 → 打开对应子 Sheet 叠在列表之上;返回/×/空白 → 关子页回列表。隐私说明移进个人档案子页顶部。

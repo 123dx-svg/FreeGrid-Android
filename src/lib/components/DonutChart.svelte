@@ -42,13 +42,42 @@
 
   // ── 按住交互状态 ──
   let activeIndex = $state<number | null>(null);
-  let pressing = false;
   let wrapEl: HTMLDivElement | undefined = $state();
   let donutEl: HTMLDivElement | undefined = $state();
   let legRefs: HTMLLIElement[] = [];
   let leaderPts = $state<string>(""); // overlay polyline points(wrap 坐标)
   let wrapW = $state(0);
   let wrapH = $state(0);
+
+  // 意图判定:按下先不拦截滚动,长按(或未纵向滑动)才激活,避免误触打断纵向滚动
+  const HOLD_MS = 180;
+  const MOVE_CANCEL = 10; // 触发前纵向/横向移动超过此像素 → 判为滚动,放行
+  let holdTimer: ReturnType<typeof setTimeout> | null = null;
+  let startX = 0;
+  let startY = 0;
+  let capId: number | null = null;
+  let capEl: HTMLElement | null = null; // 捕获指针的元素(donut 或图例行)
+  let armed = false; // 已进入激活态(可 scrub / 拦截默认)
+
+  function clearHold() {
+    if (holdTimer) {
+      clearTimeout(holdTimer);
+      holdTimer = null;
+    }
+  }
+  function release() {
+    clearHold();
+    armed = false;
+    if (capEl && capId !== null) {
+      try {
+        capEl.releasePointerCapture(capId);
+      } catch {
+        /* ignore */
+      }
+    }
+    capEl = null;
+    capId = null;
+  }
 
   const yuan = (n: number) => "¥" + Math.round(n).toLocaleString("en-US");
 
@@ -105,34 +134,86 @@
     else leaderPts = "";
   }
 
-  function onDown(e: PointerEvent) {
-    if (!hasData) return;
-    pressing = true;
+  // ── 扇区(donut)手势:长按/静止才激活,纵向滑动放行给页面滚动 ──
+  function activateDonut(e: PointerEvent) {
+    armed = true;
+    capEl = donutEl ?? null;
+    capId = e.pointerId;
     try {
       donutEl?.setPointerCapture(e.pointerId);
     } catch {
       /* ignore */
     }
     setActive(indexFromEvent(e));
-    e.preventDefault();
+  }
+  function onDown(e: PointerEvent) {
+    if (!hasData) return;
+    startX = e.clientX;
+    startY = e.clientY;
+    clearHold();
+    holdTimer = setTimeout(() => {
+      holdTimer = null;
+      activateDonut(e);
+    }, HOLD_MS);
   }
   function onMove(e: PointerEvent) {
-    if (!pressing) return;
-    const i = indexFromEvent(e);
-    if (i !== null && i !== activeIndex) setActive(i);
-    e.preventDefault();
+    if (armed) {
+      const i = indexFromEvent(e);
+      if (i !== null && i !== activeIndex) setActive(i);
+      e.preventDefault();
+      return;
+    }
+    // 触发前:移动过多判为滚动,取消长按,放行原生滚动
+    if (holdTimer && (Math.abs(e.clientX - startX) > MOVE_CANCEL || Math.abs(e.clientY - startY) > MOVE_CANCEL)) {
+      clearHold();
+    }
   }
-  function onUp(e: PointerEvent) {
-    pressing = false;
-    setActive(null);
+  function onUp() {
+    if (armed) setActive(null);
+    release();
+  }
+
+  // ── 图例(反向):按住某行 → 高亮扇区 + 反向连线;同样长按/静止才激活 ──
+  function activateLeg(e: PointerEvent, i: number) {
+    armed = true;
+    capEl = legRefs[i] ?? null;
+    capId = e.pointerId;
     try {
-      donutEl?.releasePointerCapture(e.pointerId);
+      legRefs[i]?.setPointerCapture(e.pointerId);
     } catch {
       /* ignore */
     }
+    setActive(i);
+  }
+  function onLegDown(e: PointerEvent, i: number) {
+    if (!hasData) return;
+    startX = e.clientX;
+    startY = e.clientY;
+    clearHold();
+    holdTimer = setTimeout(() => {
+      holdTimer = null;
+      activateLeg(e, i);
+    }, HOLD_MS);
+  }
+  function onLegMove(e: PointerEvent) {
+    if (armed) {
+      e.preventDefault();
+      return;
+    }
+    if (holdTimer && (Math.abs(e.clientX - startX) > MOVE_CANCEL || Math.abs(e.clientY - startY) > MOVE_CANCEL)) {
+      clearHold();
+    }
+  }
+  // 桌面端:鼠标悬停图例即预览(有 hover 能力时)
+  function onLegEnter(i: number) {
+    if (matchMedia("(hover: hover)").matches) setActive(i);
+  }
+  function onLegLeave() {
+    if (!armed && matchMedia("(hover: hover)").matches) setActive(null);
   }
 
   const activeSlice = $derived(activeIndex !== null ? visibleSlices[activeIndex] : null);
+
 </script>
 
 <div class="donut-wrap" bind:this={wrapEl}>
@@ -184,7 +265,18 @@
   {#if showLegend && hasData}
     <ul class="legend">
       {#each visibleSlices as s, i (s.name)}
-        <li class="leg-row" class:on={activeIndex === i} bind:this={legRefs[i]}>
+        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+        <li
+          class="leg-row"
+          class:on={activeIndex === i}
+          bind:this={legRefs[i]}
+          onpointerdown={(e) => onLegDown(e, i)}
+          onpointermove={onLegMove}
+          onpointerup={onUp}
+          onpointercancel={onUp}
+          onpointerenter={() => onLegEnter(i)}
+          onpointerleave={onLegLeave}
+        >
           <span class="leg-dot" style="background:{s.color}"></span>
           <span class="leg-name">{s.name}{#if s.passive}<span class="leg-tag">被动</span>{/if}</span>
           <span class="leg-pct num">{Math.round(s.pct)}%</span>
@@ -225,7 +317,7 @@
   .donut {
     position: relative;
     flex: 0 0 auto;
-    touch-action: none; /* 滑动选区块时不让外层滚动 */
+    touch-action: pan-y; /* 纵向可正常滚动;长按才触发扇区读数 */
     cursor: pointer;
   }
   svg {
@@ -284,6 +376,7 @@
     margin: 0 -6px;
     border-radius: 7px;
     transition: background 0.12s ease;
+    touch-action: pan-y; /* 图例区纵向可滚动;长按才反向连线 */
   }
   .leg-row.on {
     background: color-mix(in srgb, var(--ink) 9%, transparent);

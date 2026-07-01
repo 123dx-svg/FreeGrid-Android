@@ -4,7 +4,12 @@
   import Assets from "./lib/Assets.svelte";
   import History from "./lib/History.svelte";
   import Check from "./lib/Check.svelte";
-  import { initStore } from "./lib/store.svelte";
+  import BadgeToast from "./lib/components/BadgeToast.svelte";
+  import { store, initStore } from "./lib/store.svelte";
+  import { deriveDashboard } from "./lib/derive";
+  import { loadFqResult } from "./lib/fq-test";
+  import { reconcileFromData } from "./lib/achievements.svelte";
+  import { updateFreedomWidget } from "./lib/widget";
   import { checkForUpdate, installUpdate, updateState } from "./lib/updater.svelte";
   import { settings, resolvedTheme, toggleThemeManual } from "./lib/settings.svelte";
   import { closeTopOverlay } from "./lib/overlay";
@@ -62,6 +67,66 @@
   $effect(() => {
     document.documentElement.setAttribute("data-theme", resolvedTheme());
   });
+
+  // ── 成就徽章:全局对账(随 store 变化 → 记账/改资产/导入等任何入口解锁都即时触发)──
+  $effect(() => {
+    const vm = deriveDashboard(store);
+    reconcileFromData({
+      trackDays: vm.trackDays,
+      netWorth: vm.netWorth,
+      freedomDays: vm.freedomDays,
+      passiveRatio: vm.passiveRatio,
+      expenses: store.expenses,
+      incomes: store.incomes,
+      passiveCount: store.passiveSources.length,
+      fqDone: loadFqResult() != null,
+    });
+    // 桌面小部件:把最新自由时间快照推给原生(记账/改资产/导入后刷新)
+    updateFreedomWidget(vm, store.expenses.length + store.incomes.length > 0 || vm.netWorth !== 0);
+  });
+
+  // ── 流水页悬浮:回顶 + 当前年月胶囊(main 是滚动容器)──
+  let mainEl: HTMLElement | undefined = $state();
+  let showTop = $state(false); // 滚过阈值 → 显示回顶
+  let curMonth = $state(""); // 当前视口顶部所属年月
+  let capsuleOn = $state(false);
+  let rafPending = false;
+  let capsuleTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function onMainScroll() {
+    if (rafPending) return;
+    rafPending = true;
+    requestAnimationFrame(() => {
+      rafPending = false;
+      if (!mainEl || tab !== "history") return;
+      const st = mainEl.scrollTop;
+      showTop = st > 600;
+      if (st > 200) {
+        // 探测视口顶部附近那一行(O(1),不遍历上百行)
+        const el = document.elementFromPoint(Math.round(window.innerWidth / 2), 132) as HTMLElement | null;
+        const row = el?.closest?.("[data-month]") as HTMLElement | null;
+        const m = row?.getAttribute("data-month");
+        if (m) {
+          curMonth = m;
+          capsuleOn = true;
+          if (capsuleTimer) clearTimeout(capsuleTimer);
+          capsuleTimer = setTimeout(() => (capsuleOn = false), 1000);
+        }
+      } else {
+        capsuleOn = false;
+      }
+    });
+  }
+  function scrollMainTop() {
+    mainEl?.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  $effect(() => {
+    if (tab !== "history") {
+      showTop = false;
+      capsuleOn = false;
+    }
+  });
+
 </script>
 
 {#if updateState.available}
@@ -81,7 +146,7 @@
 <div class="shell">
   <Sidebar current={tab} onNavigate={(t) => (tab = t)} theme={resolvedTheme()} onToggleTheme={toggleThemeManual} />
 
-  <main>
+  <main bind:this={mainEl} onscroll={onMainScroll}>
     {#if tab === "dashboard"}
       <Dashboard />
     {:else if tab === "assets"}
@@ -93,6 +158,14 @@
     {/if}
   </main>
 
+  <!-- 流水页:当前年月胶囊 + 回到顶部(仅 history) -->
+  {#if tab === "history"}
+    <div class="hist-capsule" class:on={capsuleOn} aria-hidden="true">{curMonth}</div>
+    <button class="hist-top" class:on={showTop} onclick={scrollMainTop} aria-label="回到顶部">
+      <svg viewBox="0 0 24 24"><path d="M12 19V6M6 12l6-6 6 6" /></svg>
+    </button>
+  {/if}
+
   <!-- 移动端底部 tab 栏(窄屏才显示) -->
   <nav class="mobile-tabs">
     {#each mobileNav as item (item.id)}
@@ -103,6 +176,9 @@
     {/each}
   </nav>
 </div>
+
+<!-- 徽章解锁庆祝浮层(全局) -->
+<BadgeToast onOpenWall={() => (tab = "check")} />
 
 <style>
   .shell {
@@ -214,5 +290,80 @@
   }
   .ub-btn:hover {
     background: rgba(255, 255, 255, 0.26);
+  }
+
+  /* ── 流水悬浮:回顶 + 年月胶囊 ── */
+  .hist-top {
+    position: fixed;
+    right: 18px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 78px);
+    z-index: 900;
+    width: 46px;
+    height: 46px;
+    border-radius: 999px;
+    border: 1px solid var(--hairline);
+    background: color-mix(in srgb, var(--mist) 88%, transparent);
+    backdrop-filter: blur(8px);
+    color: var(--ink);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    box-shadow: 0 6px 18px -6px color-mix(in srgb, #000 55%, transparent);
+    opacity: 0;
+    transform: translateY(14px) scale(0.9);
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+  .hist-top.on {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+  }
+  .hist-top svg {
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .hist-capsule {
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
+    left: 50%;
+    z-index: 900;
+    padding: 6px 16px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--ink) 82%, transparent);
+    color: var(--paper);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    box-shadow: 0 6px 18px -6px color-mix(in srgb, #000 60%, transparent);
+    opacity: 0;
+    transform: translate(-50%, -8px);
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+  .hist-capsule.on {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hist-top,
+    .hist-capsule {
+      transition: opacity 0.2s ease;
+      transform: none;
+    }
+    .hist-top.on,
+    .hist-capsule.on {
+      transform: none;
+    }
+    .hist-capsule,
+    .hist-capsule.on {
+      transform: translateX(-50%);
+    }
   }
 </style>

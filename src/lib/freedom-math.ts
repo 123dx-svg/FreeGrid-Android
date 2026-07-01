@@ -143,13 +143,15 @@ export function gridState(
   lockedAssets: number,
   cash: number,
   dailyBurnVal: number,
-  dailyPassiveVal = 0
+  dailyPassiveVal = 0,
+  liabilities = 0
 ): GridState {
   if (dailyBurnVal <= 0) {
     return { unit: "day", count: 0, blueDays: 0, yellowDays: 0, isOverflow: false };
   }
 
-  const netWorthVal = Math.max(0, lockedAssets) + Math.max(0, cash);
+  const gross = Math.max(0, lockedAssets) + Math.max(0, cash);
+  const netWorthVal = Math.max(0, gross - Math.max(0, liabilities)); // 扣负债
   const netBurn = Math.max(0, dailyBurnVal - dailyPassiveVal);
   const totalDays = netBurn > 0 ? netWorthVal / netBurn : Infinity;
 
@@ -182,8 +184,8 @@ export function gridState(
   // 渲染层永远只画 count 个格(修掉 ∞ 态曾返回 99*365 导致画爆的 bug)。
   let blueCells = 0;
   let goldCells = 0;
-  if (netWorthVal > 0 && count > 0) {
-    blueCells = Math.round((count * Math.max(0, lockedAssets)) / netWorthVal);
+  if (gross > 0 && count > 0) {
+    blueCells = Math.round((count * Math.max(0, lockedAssets)) / gross);
     goldCells = count - blueCells;
   }
 

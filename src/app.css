@@ -76,6 +76,31 @@
 
 * {
   box-sizing: border-box;
+  /* 去掉 WebView 触摸点击时的淡蓝高亮框(看着像调试框)*/
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 触摸按下时去掉 focus 蓝框;保留键盘 :focus-visible 焦点环(无障碍)*/
+button:focus:not(:focus-visible),
+a:focus:not(:focus-visible),
+[role="button"]:focus:not(:focus-visible),
+[tabindex]:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* 可点元素:禁止长按选中/系统菜单 + 轻按下反馈(输入框不受影响)*/
+button,
+a,
+[role="button"] {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+button:active,
+a:active,
+[role="button"]:active {
+  opacity: 0.72;
+  transition: opacity 0.05s ease;
 }
 
 html,
@@ -230,13 +255,16 @@ body {
 }
 
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 0;
+  height: 0;
+  display: none;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--hairline);
-  border-radius: 999px;
+  background: transparent;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+* {
+  scrollbar-width: none; /* Firefox / 隐藏滚动条,内容不再被挤偏 */
 }

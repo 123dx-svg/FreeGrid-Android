@@ -37,18 +37,20 @@ export interface PassiveSource {
 export interface UserAssets {
   lockedAssets: number; // 锁定资产(投资/定期)— 蓝格
   cash: number; // 可花现金 — 金格
+  liabilities: number; // 负债总额(房贷/车贷/信用卡等)— 从净值扣减
   updatedAt: Date;
   firstRecordDate: Date | null;
 }
 
-export function netWorth(a: Pick<UserAssets, "lockedAssets" | "cash">): number {
-  return a.lockedAssets + a.cash;
+export function netWorth(a: { lockedAssets: number; cash: number; liabilities?: number }): number {
+  return a.lockedAssets + a.cash - (a.liabilities ?? 0);
 }
 
 // ---- BackupJSON 线格式(snake_case,与 iOS DataIO.exportJSON 对称) ----
 
 export interface BackupAssetsJSON {
   total: number;
+  liabilities?: number | null;
   updated_at?: string | null; // ISO "2026-05-25T08:55:55.159Z"
 }
 export interface BackupExpenseJSON {
@@ -70,12 +72,18 @@ export interface BackupPassiveSourceJSON {
   name: string;
   monthly_amount: number;
 }
+export interface BackupAppMetaJSON {
+  badges?: Record<string, string> | null; // 徽章 id → 解锁 ISO 时间
+  fq?: unknown; // 财商测试存档(FqStored)
+}
 export interface BackupJSON {
   assets?: BackupAssetsJSON | null;
   expenses?: BackupExpenseJSON[] | null;
   incomes?: BackupIncomeJSON[] | null;
   passive_sources?: BackupPassiveSourceJSON[] | null;
   first_record_date?: string | null; // "YYYY-MM-DD"
+  // 可选:app 自有元数据(徽章/财商)。iOS/web 忽略未知字段 → 向后兼容,不影响 AI 提示词。
+  app_meta?: BackupAppMetaJSON | null;
 }
 
 // ============================================================================

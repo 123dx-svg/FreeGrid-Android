@@ -20,6 +20,7 @@ export interface DashboardVM {
   netWorth: number;
   lockedAssets: number;
   cash: number;
+  liabilities: number;
   trackDays: number;
   dailyBurn: number;
   dailyPassive: number;
@@ -46,13 +47,14 @@ export function deriveDashboard(
   const db = dailyBurn(totalExp, td);
   const dp = dailyPassive(passiveSources);
   const fd = freedomDays(nw, db, dp);
-  const grid = gridState(assets.lockedAssets, assets.cash, db, dp);
+  const grid = gridState(assets.lockedAssets, assets.cash, db, dp, assets.liabilities ?? 0);
   const history = freedomDaysHistory(expenses, incomes, nw, assets.firstRecordDate, dp, 12, now);
 
   return {
     netWorth: nw,
     lockedAssets: assets.lockedAssets,
     cash: assets.cash,
+    liabilities: assets.liabilities ?? 0,
     trackDays: td,
     dailyBurn: db,
     dailyPassive: dp,

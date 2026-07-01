@@ -10,6 +10,8 @@
 import { makeDemoData } from "./demo";
 import { suggestCategory } from "./models";
 import type { Expense, Income, PassiveSource, UserAssets, BackupJSON } from "./models";
+import { exportBadgeMeta } from "./achievements.svelte";
+import { loadFqResult } from "./fq-test";
 
 const KEY = "freegrid-data-v1";
 
@@ -21,6 +23,7 @@ export const store = $state({
   assets: {
     lockedAssets: 0,
     cash: 0,
+    liabilities: 0,
     updatedAt: new Date(),
     firstRecordDate: null as Date | null,
   } as UserAssets,
@@ -56,6 +59,7 @@ export function toBackup(): BackupJSON {
   return {
     assets: {
       total: store.assets.lockedAssets + store.assets.cash,
+      liabilities: store.assets.liabilities || undefined,
       updated_at: store.assets.updatedAt.toISOString(),
     },
     expenses: store.expenses.map((e) => ({
@@ -125,6 +129,7 @@ export function fromBackup(json: BackupJSON): Parsed {
   const assets: UserAssets = {
     lockedAssets: 0,
     cash: total,
+    liabilities: typeof json.assets?.liabilities === "number" ? Math.max(0, json.assets.liabilities) : 0,
     updatedAt: parseISO(json.assets?.updated_at),
     firstRecordDate: frd,
   };
@@ -169,7 +174,7 @@ function applyEmpty() {
       expenses: [],
       incomes: [],
       passiveSources: [],
-      assets: { lockedAssets: 0, cash: 0, updatedAt: new Date(), firstRecordDate: null },
+      assets: { lockedAssets: 0, cash: 0, liabilities: 0, updatedAt: new Date(), firstRecordDate: null },
     },
     false
   );
@@ -290,8 +295,9 @@ export function transfer(amount: number, cashToAsset: boolean) {
   touch();
 }
 
-export function updateBucket(which: "locked" | "cash", value: number) {
+export function updateBucket(which: "locked" | "cash" | "liabilities", value: number) {
   if (which === "locked") store.assets.lockedAssets = Math.max(0, value);
+  else if (which === "liabilities") store.assets.liabilities = Math.max(0, value);
   else store.assets.cash = Math.max(0, value);
   touch();
 }
@@ -359,7 +365,47 @@ export function clearAll() {
   persist();
 }
 
-/** 导出为下载用的 JSON 字符串(pretty) */
+/** 导出为下载用的 JSON 字符串(pretty)。附带 app_meta(徽章/财商),供换机迁移;iOS/web 忽略。 */
 export function exportJSONString(): string {
-  return JSON.stringify(toBackup(), null, 2);
+  const base = toBackup();
+  let appMeta: { badges?: Record<string, string>; fq?: unknown } | undefined;
+  try {
+    const badges = exportBadgeMeta();
+    const fq = loadFqResult();
+    if ((badges && Object.keys(badges).length) || fq) {
+      appMeta = { badges, fq: fq ?? undefined };
+    }
+  } catch {
+    /* 忽略 */
+  }
+  return JSON.stringify(appMeta ? { ...base, app_meta: appMeta } : base, null, 2);
+}
+
+/** 指定自然年导出:仅含该年流水(不含资产 / 被动源)。回导建议用「合并」。 */
+export function exportJSONStringForYear(year: number): string {
+  const inYear = (d: Date) => d.getFullYear() === year;
+  const exps = store.expenses.filter((e) => inYear(e.date));
+  const incs = store.incomes.filter((i) => inYear(i.date));
+  const dates = [...exps.map((e) => e.date), ...incs.map((i) => i.date)].sort((a, b) => a.getTime() - b.getTime());
+  const backup: BackupJSON = {
+    assets: { total: 0, updated_at: new Date().toISOString() },
+    expenses: exps.map((e) => ({
+      amount: e.amount,
+      category: e.category,
+      date: toYMD(e.date),
+      note: e.note || undefined,
+      created_at: e.createdAt.toISOString(),
+    })),
+    incomes: incs.map((i) => ({
+      amount: i.amount,
+      source: i.source,
+      date: toYMD(i.date),
+      note: i.note || undefined,
+      is_passive: i.isPassive,
+      created_at: i.createdAt.toISOString(),
+    })),
+    passive_sources: [],
+    first_record_date: dates.length ? toYMD(dates[0]) : null,
+  };
+  return JSON.stringify(backup, null, 2);
 }

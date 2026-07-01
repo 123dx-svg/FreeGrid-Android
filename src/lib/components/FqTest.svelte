@@ -5,15 +5,19 @@
   import { deriveDashboard } from "../derive";
   import {
     QUESTIONS,
+    sampleQuestions,
     buildResult,
     composeResult,
     saveFqResult,
     loadFqResult,
     familyOf,
     type FqStored,
+    type FqQuestion,
   } from "../fq-test";
   import { Capacitor } from "@capacitor/core";
   import { Share } from "@capacitor/share";
+  import { renderPersonalityPng, sharePngDataUrl } from "../fq-share";
+  import { markBadgeEvent } from "../achievements.svelte";
   import { pushOverlay, popOverlay } from "../overlay";
 
   let { open = false, startFresh = false, onClose }: { open?: boolean; startFresh?: boolean; onClose?: () => void } = $props();
@@ -38,7 +42,9 @@
   let stored = $state<FqStored | null>(null);
   let flipped = $state(false); // 结果卡:正面/背面
 
-  const total = QUESTIONS.length;
+  const QUIZ_LEN = 50; // 每次测试固定 50 题(从题库分层随机抽)
+  let quizQuestions = $state<FqQuestion[]>([]);
+  const total = $derived(quizQuestions.length || QUIZ_LEN);
   const result = $derived(stored ? composeResult(stored, metrics) : null);
   const fam = $derived(familyOf(result?.code ?? "开稳"));
   // 每极的 2 字说明词(替代难懂的裸代号)
@@ -64,7 +70,8 @@
   });
 
   function beginQuiz() {
-    answers = new Array(total).fill(-1);
+    quizQuestions = sampleQuestions(QUIZ_LEN);
+    answers = new Array(quizQuestions.length).fill(-1);
     current = 0;
     locked = false;
     flipped = false;
@@ -93,12 +100,14 @@
   }
 
   function finish() {
-    const r = buildResult(answers, metrics);
+    const r = buildResult(answers, quizQuestions, metrics);
     const s: FqStored = { code: r.code, name: r.name, q: r.q, leans: r.axes.map((a) => ({ key: a.key, pole: a.pole, leanPct: a.leanPct })), date: r.date };
     saveFqResult(s);
     stored = s;
     flipped = false;
     stage = "result";
+    // 答完整套题 → 解锁「认识自己」徽章(每次完成都会检查,首次点亮即弹庆祝)
+    markBadgeEvent("completed_fq");
   }
 
   function flip(e: Event) {
@@ -120,18 +129,41 @@
     }
   });
 
+  let sharing = $state(false);
   async function share(e?: Event) {
     e?.stopPropagation();
-    if (!result) return;
-    const txt = `我的财商人格是【${result.name}】${result.code}\n财商分 ${result.fqFinal}\n「${result.tagline}」\n来自由日记测测你的财商人格 →`;
+    if (!result || sharing) return;
+    const caption = `我的财商人格是【${result.name}】${result.code} · 财商分 ${result.fqFinal}\n「${result.tagline}」\n来自由日记测测你的财商人格 →`;
+    sharing = true;
+    // 1) 先生成卡片图片。只有这一步失败,才退回纯文字分享。
+    let dataUrl: string | null = null;
     try {
-      if (Capacitor.isNativePlatform()) {
-        await Share.share({ title: "我的财商人格", text: txt, dialogTitle: "分享财商人格" });
-      } else if (navigator.share) {
-        await navigator.share({ text: txt });
-      }
+      dataUrl = await renderPersonalityPng(result);
     } catch {
-      /* 用户取消等忽略 */
+      dataUrl = null;
+    }
+    try {
+      if (dataUrl) {
+        // 2) 分享图片。用户取消 / 分享失败 → 直接结束,**不再弹文字**。
+        try {
+          await sharePngDataUrl(dataUrl, caption);
+        } catch {
+          /* 取消或分享失败:静默,不做文字兜底 */
+        }
+        return;
+      }
+      // 出图失败的兜底:纯文字分享
+      try {
+        if (Capacitor.isNativePlatform()) {
+          await Share.share({ title: "我的财商人格", text: caption, dialogTitle: "分享财商人格" });
+        } else if (navigator.share) {
+          await navigator.share({ text: caption });
+        }
+      } catch {
+        /* 用户取消等忽略 */
+      }
+    } finally {
+      sharing = false;
     }
   }
 
@@ -153,7 +185,7 @@
           <FqEmblem code="开进远研" size={92} animated />
         </div>
         <h2 class="fq-intro-title">财商人格测试</h2>
-        <p class="fq-intro-sub">50 道有趣小题 · 约 3 分钟<br />测出你的财商人格 + 财商分,看看你是哪一型</p>
+        <p class="fq-intro-sub">题库 {QUESTIONS.length} 题 · 每次随机抽 {QUIZ_LEN} 题<br />测出你的财商人格 + 财商分,看看你是哪一型</p>
         <ul class="fq-intro-pts">
           <li>· 4 个维度组合出 <b>16 种财商人格</b></li>
           <li>· 结合你的真实记账,给出 <b>财商分</b></li>
@@ -162,7 +194,7 @@
         <button class="fq-btn primary" onclick={beginQuiz}>开始测试 →</button>
       </div>
     {:else if stage === "quiz"}
-      {@const q = QUESTIONS[current]}
+      {@const q = quizQuestions[current]}
       <div class="fq-quiz">
         <div class="fq-prog">
           <div class="fq-prog-bar"><div class="fq-prog-fill" style="width:{((current + 1) / total) * 100}%"></div></div>
@@ -250,7 +282,7 @@
 
           <div class="fq-actions">
             <button class="fq-btn" onclick={retest}>重新测试</button>
-            <button class="fq-btn primary" onclick={share}>分享我的人格 ↗</button>
+            <button class="fq-btn primary" onclick={share} disabled={sharing}>{sharing ? "生成卡片…" : "分享我的人格 ↗"}</button>
           </div>
         </div>
       </div>
