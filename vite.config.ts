@@ -14,6 +14,9 @@ export default defineConfig(({ mode }) => {
   // 显式经 `vite build --mode tauri`(tauri.conf 的 beforeBuildCommand)触发,可控;兜底再认 Tauri 注入的
   // TAURI_ENV_PLATFORM,双保险。网页构建(CF Pages 跑 `npm run build`)保留 PWA(离线 + 可安装)。
   const isTauriBuild = mode === 'tauri' || !!process.env.TAURI_ENV_PLATFORM
+  // 安卓(Capacitor)同理:WebView 会被 SW precache 缓存旧前端,导致更新后仍显示旧界面。
+  // 经 `vite build --mode android` 触发,跳过 PWA,与桌面端一致。
+  const isNativeBuild = isTauriBuild || mode === 'android'
 
   return {
     define: {
@@ -22,15 +25,15 @@ export default defineConfig(({ mode }) => {
     plugins: [
       svelte(),
       // 桌面构建跳过 PWA;网页构建照常注入 service worker
-      ...(isTauriBuild
+      ...(isNativeBuild
         ? []
         : [
             VitePWA({
               registerType: 'autoUpdate',
               includeAssets: ['icons/apple-touch-icon.png'],
               manifest: {
-                name: 'FreeGrid · 通往财富自由之路',
-                short_name: 'FreeGrid',
+                name: '自由日记 · 通往财富自由之路',
+                short_name: '自由日记',
                 description: '把财富自由翻译成「自由天数」的纯本地记账。零网络,数据只存本机浏览器。',
                 lang: 'zh-CN',
                 theme_color: '#0a0b13',

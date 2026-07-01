@@ -1,0 +1,11 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">自由日记</string>
+    <string name="title_activity_main">自由日记</string>
+    <string name="package_name">com.freegrid.app</string>
+    <string name="custom_url_scheme">com.freegrid.app</string>
+    <string name="sc_expense">记支出</string>
+    <string name="sc_expense_long">记一笔支出</string>
+    <string name="sc_income">记收入</string>
+    <string name="sc_income_long">记一笔收入</string>
+</resources>

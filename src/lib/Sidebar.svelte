@@ -39,7 +39,7 @@
       {/if}
     </button>
     <div class="word">
-      <div class="name">FreeGrid</div>
+      <div class="name">自由日记</div>
       <div class="tag">通往财富自由之路</div>
     </div>
   </div>

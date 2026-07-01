@@ -23,3 +23,14 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Android 签名密钥(绝不入库;丢失=无法升级老用户)
+*.jks
+*.keystore
+keystore.properties
+android/keystore.properties
+
+# Capacitor 安卓工程的本地配置
+android/local.properties
+.agents/
+

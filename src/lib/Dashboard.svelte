@@ -1,10 +1,15 @@
 <script lang="ts">
-  import { store, addExpense, addIncome } from "./store.svelte";
+  import { store, addExpense, addIncome, deleteTransaction } from "./store.svelte";
   import { deriveDashboard } from "./derive";
   import { freedomUnitLabel, freedomDaysDisplay, GRID_UNIT_META } from "./freedom-math";
   import { simOutcome, gridUnitFor, cellCountFor, blueCellsFor, simDemoTiming } from "./sim-demo";
   import { EXPENSE_CATEGORIES } from "./models";
+  import { colorForName } from "./categoryColors";
+  import { settings, addCustom } from "./settings.svelte";
+  import { quickAdd } from "./quickadd.svelte";
   import Sheet from "./components/Sheet.svelte";
+  import CatPicker from "./components/CatPicker.svelte";
+  import WheelDateTime from "./components/WheelDateTime.svelte";
   import Sparkline from "./components/Sparkline.svelte";
   import FreedomGrid from "./components/FreedomGrid.svelte";
   import SimDemoGrid from "./components/SimDemoGrid.svelte";
@@ -19,29 +24,70 @@
 
   // ── 录入 sheet:本地状态 ──
   const pad = (n: number) => String(n).padStart(2, "0");
-  const todayYMD = () => `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-  // 'YYYY-MM-DD' → 本地零点 Date(对齐 store 的 parseYMD 口径)
-  function ymdToDate(s: string): Date {
-    const [y, m, d] = s.split("-").map(Number);
-    return new Date(y, m - 1, d);
+  // 日期+时间精确到分:展示用文案
+  function fmtDateTime(d: Date): string {
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
+
+  // 收入来源快捷选项
+  const SOURCE_PRESETS = ["工资", "奖金", "副业", "投资", "利息", "红包", "其他"];
+
+  // 分类/来源选项(预设 + 自定义)+ 色;常用(按使用频次,附自定义项)
+  const expenseOptions = $derived(
+    [...EXPENSE_CATEGORIES, ...settings.customExpenseCategories].map((name) => ({ name, color: colorForName(name) }))
+  );
+  const incomeOptions = $derived(
+    [...SOURCE_PRESETS, ...settings.customIncomeSources].map((name) => ({ name, color: colorForName(name) }))
+  );
+  function countTop(vals: string[], n: number): string[] {
+    const cnt = new Map<string, number>();
+    for (const k of vals) if (k) cnt.set(k, (cnt.get(k) ?? 0) + 1);
+    return [...cnt.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(([k]) => k);
+  }
+  const expFrequent = $derived.by(() => {
+    const top = countTop(store.expenses.map((e) => e.category), 6);
+    const base = top.length ? top : [...EXPENSE_CATEGORIES].slice(0, 6);
+    return Array.from(new Set([...base, ...settings.customExpenseCategories]));
+  });
+  const incFrequent = $derived.by(() => {
+    const top = countTop(store.incomes.map((i) => i.source), 6);
+    const base = top.length ? top : SOURCE_PRESETS.slice(0, 6);
+    return Array.from(new Set([...base, ...settings.customIncomeSources]));
+  });
 
   // 记支出
   let showExpense = $state(false);
   let expAmount = $state<number | null>(null);
   let expCategory = $state<string>(EXPENSE_CATEGORIES[0]);
   let expNote = $state("");
-  let expDate = $state(todayYMD());
+  let expDateTime = $state(new Date());
   const expValid = $derived((expAmount ?? 0) > 0);
   function resetExpense() {
     expAmount = null;
     expCategory = EXPENSE_CATEGORIES[0];
     expNote = "";
-    expDate = todayYMD();
+    expDateTime = new Date();
   }
+  // ── 记完顶部弹 + 撤销 ──
+  type Toast = { id: string; kind: "expense" | "income"; label: string };
+  let toast = $state<Toast | null>(null);
+  let toastTimer: ReturnType<typeof setTimeout> | undefined;
+  const yuanAmt = (n: number) => "¥" + Math.round(n).toLocaleString("en-US");
+  function showToast(t: Toast) {
+    if (toastTimer) clearTimeout(toastTimer);
+    toast = t;
+    toastTimer = setTimeout(() => (toast = null), 4000);
+  }
+  function undoLast() {
+    if (toast) deleteTransaction(toast.id, toast.kind);
+    if (toastTimer) clearTimeout(toastTimer);
+    toast = null;
+  }
+
   function submitExpense() {
     if (!expValid) return;
-    addExpense(expAmount!, expCategory, expNote.trim(), ymdToDate(expDate));
+    const id = addExpense(expAmount!, expCategory, expNote.trim(), expDateTime, expDateTime);
+    showToast({ id, kind: "expense", label: `${expCategory} −${yuanAmt(expAmount!)}` });
     showExpense = false;
     resetExpense();
   }
@@ -51,20 +97,35 @@
   let incAmount = $state<number | null>(null);
   let incSource = $state("");
   let incNote = $state("");
-  let incDate = $state(todayYMD());
+  let incDateTime = $state(new Date());
   const incValid = $derived((incAmount ?? 0) > 0 && incSource.trim().length > 0);
   function resetIncome() {
     incAmount = null;
     incSource = "";
     incNote = "";
-    incDate = todayYMD();
+    incDateTime = new Date();
   }
   function submitIncome() {
     if (!incValid) return;
-    addIncome(incAmount!, incSource.trim(), false, incNote.trim(), ymdToDate(incDate));
+    const src = incSource.trim();
+    const id = addIncome(incAmount!, src, false, incNote.trim(), incDateTime, incDateTime);
+    showToast({ id, kind: "income", label: `${src} +${yuanAmt(incAmount!)}` });
     showIncome = false;
     resetIncome();
   }
+
+  // 桌面图标长按快捷方式 → 打开对应记账 Sheet
+  $effect(() => {
+    if (quickAdd.action === "expense") {
+      resetExpense();
+      showExpense = true;
+      quickAdd.action = null;
+    } else if (quickAdd.action === "income") {
+      resetIncome();
+      showIncome = true;
+      quickAdd.action = null;
+    }
+  });
 
   // 模拟一笔(只预览,不写账本 — 对齐 iOS SimulateSheet)
   let showSim = $state(false);
@@ -186,6 +247,13 @@
 </script>
 
 <div class="dash">
+  {#if toast}
+    <div class="rec-toast" class:income={toast.kind === "income"} role="status">
+      <svg viewBox="0 0 24 24" class="rt-ic"><path d="M5 13l4 4L19 7" /></svg>
+      <span class="rt-msg">已记一笔 · {toast.label}</span>
+      <button class="rt-undo" onclick={undoLast}>撤销</button>
+    </div>
+  {/if}
   <header class="page-head">
     <p class="kicker">DASHBOARD</p>
     <h1>自由仪表盘</h1>
@@ -196,12 +264,12 @@
     <section class="vault-card onboard">
       <span class="kicker">WELCOME</span>
       <h2 class="onboard-title">记下<span class="accent">第一笔</span>,点亮你的自由</h2>
-      <p class="onboard-sub">FreeGrid 把你的资产换算成「还能自由多少天」。先记一笔支出或收入,仪表盘和格子就会亮起来。</p>
+      <p class="onboard-sub">自由日记 把你的资产换算成「还能自由多少天」。先记一笔支出或收入,仪表盘和格子就会亮起来。</p>
       <div class="onboard-actions">
         <button class="vbtn flame" onclick={() => (showExpense = true)}>− 记支出</button>
         <button class="vbtn sky" onclick={() => (showIncome = true)}>+ 记收入</button>
       </div>
-      <p class="onboard-hint">已有备份?到「资产 · Assets」页可一键导入 JSON。</p>
+      <p class="onboard-hint">已有备份或想从别的记账 app 迁入?到「自检 → 个人档案·设置 → 数据」里导入。</p>
     </section>
   {:else}
 
@@ -214,6 +282,29 @@
       <span class="meteor" style="top:20%; left:30%; animation-duration:3.0s; animation-delay:2.3s"></span>
       <span class="meteor" style="top:-4%; left:66%; animation-duration:5.2s; animation-delay:0.7s"></span>
       <span class="meteor" style="top:14%; left:80%; animation-duration:3.8s; animation-delay:3.1s"></span>
+    </div>
+    <!-- 星点夜空层(纯 CSS,深浅双主题;轻微闪烁) -->
+    <div class="stars" aria-hidden="true">
+      <span class="star s2" style="top:10%; left:6%; animation-duration:4.2s; animation-delay:0.0s"></span>
+      <span class="star" style="top:22%; left:12%; animation-duration:5.1s; animation-delay:1.3s"></span>
+      <span class="star s1" style="top:40%; left:8%; animation-duration:3.8s; animation-delay:2.6s"></span>
+      <span class="star" style="top:64%; left:14%; animation-duration:5.6s; animation-delay:0.9s"></span>
+      <span class="star s1" style="top:80%; left:9%; animation-duration:4.7s; animation-delay:3.4s"></span>
+      <span class="star" style="top:16%; left:24%; animation-duration:4.0s; animation-delay:2.0s"></span>
+      <span class="star s2" style="top:48%; left:26%; animation-duration:5.3s; animation-delay:0.4s"></span>
+      <span class="star s1" style="top:74%; left:30%; animation-duration:4.5s; animation-delay:1.8s"></span>
+      <span class="star" style="top:6%; left:40%; animation-duration:5.0s; animation-delay:3.0s"></span>
+      <span class="star s1" style="top:34%; left:44%; animation-duration:3.6s; animation-delay:1.1s"></span>
+      <span class="star" style="top:88%; left:46%; animation-duration:5.8s; animation-delay:2.4s"></span>
+      <span class="star s2" style="top:12%; left:58%; animation-duration:4.4s; animation-delay:0.6s"></span>
+      <span class="star" style="top:52%; left:60%; animation-duration:5.2s; animation-delay:3.3s"></span>
+      <span class="star s1" style="top:78%; left:64%; animation-duration:4.1s; animation-delay:1.5s"></span>
+      <span class="star" style="top:26%; left:72%; animation-duration:5.5s; animation-delay:2.7s"></span>
+      <span class="star s2" style="top:60%; left:76%; animation-duration:3.9s; animation-delay:0.2s"></span>
+      <span class="star s1" style="top:8%; left:86%; animation-duration:4.8s; animation-delay:2.1s"></span>
+      <span class="star" style="top:40%; left:90%; animation-duration:5.4s; animation-delay:1.0s"></span>
+      <span class="star s1" style="top:70%; left:92%; animation-duration:4.3s; animation-delay:3.6s"></span>
+      <span class="star s2" style="top:90%; left:84%; animation-duration:5.0s; animation-delay:0.8s"></span>
     </div>
     <div class="hero-main">
       <span class="kicker">{kicker}</span>
@@ -312,20 +403,24 @@
     />
   </div>
   <div class="fg-field">
-    <label class="fg-label" for="exp-cat">分类</label>
-    <select id="exp-cat" class="fg-select" bind:value={expCategory}>
-      {#each EXPENSE_CATEGORIES as cat}
-        <option value={cat}>{cat}</option>
-      {/each}
-    </select>
+    <span class="fg-label">分类</span>
+    <CatPicker
+      options={expenseOptions}
+      value={expCategory}
+      onSelect={(n) => (expCategory = n)}
+      frequent={expFrequent}
+      allowCustom
+      onAddCustom={(n) => addCustom("expense", n)}
+      placeholder="新分类"
+    />
   </div>
   <div class="fg-field">
     <label class="fg-label" for="exp-note">备注 (可选)</label>
     <input id="exp-note" class="fg-input" type="text" placeholder="比如:跟朋友吃饭" bind:value={expNote} />
   </div>
   <div class="fg-field">
-    <label class="fg-label" for="exp-date">日期</label>
-    <input id="exp-date" class="fg-input" type="date" bind:value={expDate} />
+    <span class="fg-label">日期时间 · {fmtDateTime(expDateTime)}</span>
+    <WheelDateTime bind:value={expDateTime} />
   </div>
   <button class="fg-btn flame" disabled={!expValid} onclick={submitExpense}>记下这笔支出</button>
 </Sheet>
@@ -346,16 +441,24 @@
     />
   </div>
   <div class="fg-field">
-    <label class="fg-label" for="inc-source">来源</label>
-    <input id="inc-source" class="fg-input" type="text" placeholder="工资 / 副业 / 投资…" bind:value={incSource} />
+    <span class="fg-label">来源</span>
+    <CatPicker
+      options={incomeOptions}
+      value={incSource}
+      onSelect={(n) => (incSource = n)}
+      frequent={incFrequent}
+      allowCustom
+      onAddCustom={(n) => addCustom("income", n)}
+      placeholder="新来源"
+    />
   </div>
   <div class="fg-field">
     <label class="fg-label" for="inc-note">备注 (可选)</label>
     <input id="inc-note" class="fg-input" type="text" placeholder="比如:三月奖金" bind:value={incNote} />
   </div>
   <div class="fg-field">
-    <label class="fg-label" for="inc-date">日期</label>
-    <input id="inc-date" class="fg-input" type="date" bind:value={incDate} />
+    <span class="fg-label">日期时间 · {fmtDateTime(incDateTime)}</span>
+    <WheelDateTime bind:value={incDateTime} />
   </div>
   <button class="fg-btn" disabled={!incValid} onclick={submitIncome}>记下这笔收入</button>
 </Sheet>
@@ -452,6 +555,68 @@
 </Sheet>
 
 <style>
+  /* ── 记完顶部弹 toast ── */
+  .rec-toast {
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 12px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-sm);
+    max-width: 92vw;
+    padding: 10px 12px 10px 14px;
+    border-radius: 999px;
+    background: var(--ink);
+    color: var(--paper);
+    box-shadow: 0 10px 30px color-mix(in srgb, #000 38%, transparent);
+    animation: toastIn 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .rt-ic {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 18px;
+    fill: none;
+    stroke: var(--moss);
+    stroke-width: 2.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .rec-toast.income .rt-ic {
+    stroke: var(--sky-deep);
+  }
+  .rt-msg {
+    font-size: 14px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .rt-undo {
+    flex: 0 0 auto;
+    border: 0;
+    background: color-mix(in srgb, var(--paper) 18%, transparent);
+    color: var(--paper);
+    font-family: var(--font-rounded);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .rt-undo:hover {
+    background: color-mix(in srgb, var(--paper) 30%, transparent);
+  }
+  @keyframes toastIn {
+    from {
+      opacity: 0;
+      transform: translateX(-50%) translateY(-12px);
+    }
+  }
+
+  /* ── 录入:分类/来源选择器由 CatPicker 组件统一(样式在该组件内)── */
+
   .dash {
     display: flex;
     flex-direction: column;
@@ -483,56 +648,119 @@
   .hero.glow::before {
     content: "";
     position: absolute;
-    top: -40%;
-    left: -10%;
-    width: 55%;
-    height: 160%;
-    background: radial-gradient(closest-side, color-mix(in srgb, var(--sky) 16%, transparent), transparent);
+    inset: 0;
     pointer-events: none;
+    z-index: 0;
+    /* 中性轻暗角:四角朝卡片底色轻压,给景深;不带颜色,零油膜感 */
+    background: radial-gradient(
+      125% 95% at 50% 36%,
+      transparent 55%,
+      color-mix(in srgb, var(--paper) 50%, transparent) 100%
+    );
   }
-  /* 流星层:暗色才显示(亮色 opacity 0) */
+  /* ── 星点夜空层(深浅双主题 + 轻微闪烁)── */
+  .stars {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .star {
+    position: absolute;
+    width: 1.5px;
+    height: 1.5px;
+    border-radius: 999px;
+    /* 浅色:极淡蓝 + 微辉光,白底读作轻盈微光而非脏点 */
+    background: color-mix(in srgb, var(--sky-deep) 60%, transparent);
+    box-shadow: 0 0 2px color-mix(in srgb, var(--sky-deep) 35%, transparent);
+    opacity: 0.5;
+    animation-name: twinkle;
+    animation-timing-function: ease-in-out;
+    animation-iteration-count: infinite;
+  }
+  .star.s1 {
+    width: 1px;
+    height: 1px;
+  }
+  .star.s2 {
+    width: 2px;
+    height: 2px;
+  }
+  :global(:root[data-theme="dark"]) .star {
+    background: color-mix(in srgb, #fff 75%, var(--sky));
+    box-shadow: 0 0 3px color-mix(in srgb, var(--sky) 55%, transparent);
+  }
+  @keyframes twinkle {
+    0%,
+    100% {
+      opacity: 0.28;
+    }
+    50% {
+      opacity: 0.8;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .star {
+      animation: none;
+      opacity: 0.5;
+    }
+  }
+  /* 流星层:深/浅双主题都显示(颜色随主题切换) */
   .meteors {
     position: absolute;
     inset: 0;
     overflow: hidden;
     pointer-events: none;
-    opacity: 0;
     z-index: 0;
-  }
-  :global(:root[data-theme="dark"]) .meteors {
-    opacity: 1;
   }
   .meteor {
     position: absolute;
-    width: 86px;
-    height: 1px;
+    width: 92px;
+    height: 1.5px;
     border-radius: 999px;
-    background: linear-gradient(90deg, color-mix(in srgb, var(--sky) 92%, white), transparent);
-    filter: drop-shadow(0 0 3px var(--sky));
+    /* 亮头在前端(右下,即运动方向),尾巴向后拖 —— 浅色用深蓝,白底可见 */
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      transparent 52%,
+      color-mix(in srgb, var(--sky-deep) 85%, transparent) 100%
+    );
+    filter: drop-shadow(0 0 2px color-mix(in srgb, var(--sky-deep) 40%, transparent));
     opacity: 0;
     animation-name: shoot;
     animation-timing-function: linear;
     animation-iteration-count: infinite;
   }
+  :global(:root[data-theme="dark"]) .meteor {
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      transparent 52%,
+      color-mix(in srgb, var(--sky) 92%, white) 100%
+    );
+    filter: drop-shadow(0 0 3px var(--sky));
+  }
   @keyframes shoot {
     0% {
       opacity: 0;
-      transform: translate(-40px, -28px) rotate(32deg);
+      transform: translate(-60px, -38px) rotate(32deg);
     }
     12% {
-      opacity: 0.9;
+      opacity: 0.85;
     }
     72% {
-      opacity: 0.7;
+      opacity: 0.6;
     }
     100% {
       opacity: 0;
-      transform: translate(300px, 188px) rotate(32deg);
+      transform: translate(320px, 200px) rotate(32deg);
     }
   }
   @media (prefers-reduced-motion: reduce) {
     .meteor {
       animation: none;
+      opacity: 0;
     }
   }
   .hero-main {

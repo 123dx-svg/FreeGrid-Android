@@ -240,18 +240,22 @@ function touch() {
   persist();
 }
 
-export function addExpense(amount: number, category: string, note = "", date = new Date()) {
-  store.expenses.push({ id: nid(), amount, category, note, date, createdAt: new Date() });
+export function addExpense(amount: number, category: string, note = "", date = new Date(), createdAt = new Date()) {
+  const id = nid();
+  store.expenses.push({ id, amount, category, note, date, createdAt });
   store.assets.cash -= amount;
   if (!store.assets.firstRecordDate) store.assets.firstRecordDate = date;
   touch();
+  return id;
 }
 
-export function addIncome(amount: number, source: string, isPassive = false, note = "", date = new Date()) {
-  store.incomes.push({ id: nid(), amount, source, isPassive, note, date, createdAt: new Date() });
+export function addIncome(amount: number, source: string, isPassive = false, note = "", date = new Date(), createdAt = new Date()) {
+  const id = nid();
+  store.incomes.push({ id, amount, source, isPassive, note, date, createdAt });
   store.assets.cash += amount;
   if (!store.assets.firstRecordDate) store.assets.firstRecordDate = date;
   touch();
+  return id;
 }
 
 export function deleteTransaction(id: string, kind: "expense" | "income") {
@@ -306,6 +310,48 @@ export function deletePassiveSource(id: string) {
 export function importBackup(json: BackupJSON) {
   apply(fromBackup(json), false);
   persist();
+}
+
+/** 导入:合并进现有账本(追加 + 内容去重;被动源按名合并;资产/净值保持不变)。
+ *  返回 { added, skipped }。 */
+export function mergeBackup(json: BackupJSON): { added: number; skipped: number } {
+  const p = fromBackup(json);
+  const fp = (kind: string, amount: number, date: Date, key: string, note: string) =>
+    `${kind}|${toYMD(date)}|${amount}|${key}|${note}`;
+  const seen = new Set<string>();
+  for (const e of store.expenses) seen.add(fp("e", e.amount, e.date, e.category, e.note));
+  for (const i of store.incomes) seen.add(fp("i", i.amount, i.date, i.source, i.note));
+
+  const newExp = p.expenses.filter((e) => {
+    const k = fp("e", e.amount, e.date, e.category, e.note);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  const newInc = p.incomes.filter((i) => {
+    const k = fp("i", i.amount, i.date, i.source, i.note);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  store.expenses = [...store.expenses, ...newExp];
+  store.incomes = [...store.incomes, ...newInc];
+
+  const pnames = new Set(store.passiveSources.map((s) => s.name));
+  for (const ps of p.passiveSources) {
+    if (!pnames.has(ps.name)) {
+      store.passiveSources = [...store.passiveSources, ps];
+      pnames.add(ps.name);
+    }
+  }
+  const times = [...store.expenses, ...store.incomes].map((x) => x.date.getTime());
+  if (times.length) store.assets.firstRecordDate = new Date(Math.min(...times));
+  store.seeded = false;
+  persist();
+
+  const total = p.expenses.length + p.incomes.length;
+  const added = newExp.length + newInc.length;
+  return { added, skipped: total - added };
 }
 
 export function clearAll() {

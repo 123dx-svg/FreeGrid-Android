@@ -84,21 +84,45 @@ export interface BackupJSON {
 // ============================================================================
 
 export const EXPENSE_CATEGORIES = [
-  "早餐",
-  "午餐",
-  "晚餐",
-  "购物",
+  "饮食",
+  "房租",
+  "房贷",
+  "水电燃煤",
+  "物业费",
   "交通",
-  "娱乐",
-  "成长投资",
+  "车贷",
+  "购物",
+  "育儿",
+  "保险",
   "医疗",
+  "成长投资",
+  "娱乐",
+  "人情",
   "其他",
 ] as const;
+
+// 分类分组(用于录入弹窗的分区展示;顺序即展示顺序)
+export const CATEGORY_GROUPS: { label: string; items: string[] }[] = [
+  { label: "饮食", items: ["饮食"] },
+  { label: "居住", items: ["房租", "房贷", "水电燃煤", "物业费"] },
+  { label: "出行", items: ["交通", "车贷"] },
+  { label: "生活", items: ["购物", "育儿", "保险", "医疗"] },
+  { label: "成长社交", items: ["成长投资", "娱乐", "人情"] },
+  { label: "其他", items: ["其他"] },
+];
 
 export const CATEGORY_FALLBACK = "其他";
 
 // 高置信别名表(只放"几乎不会错"的);拿不准的故意不放,落到 needs-review。
 const CATEGORY_ALIASES: Record<string, string> = {
+  // 旧版三餐合并到「饮食」(老数据/iOS 导出兼容)
+  早餐: "饮食",
+  午餐: "饮食",
+  晚餐: "饮食",
+  餐饮: "饮食",
+  吃饭: "饮食",
+  food: "饮食",
+  meal: "饮食",
   transport: "交通",
   transportation: "交通",
   shopping: "购物",
@@ -106,6 +130,21 @@ const CATEGORY_ALIASES: Record<string, string> = {
   entertainment: "娱乐",
   medical: "医疗",
   health: "医疗",
+  mortgage: "房贷",
+  carloan: "车贷",
+  人情往来: "人情",
+  随礼: "人情",
+  红包: "人情",
+  水费: "水电燃煤",
+  电费: "水电燃煤",
+  燃气费: "水电燃煤",
+  煤气费: "水电燃煤",
+  水电: "水电燃煤",
+  物业: "物业费",
+  保费: "保险",
+  保险费: "保险",
+  孩子: "育儿",
+  教育: "育儿",
   other: "其他",
   others: "其他",
   misc: "其他",

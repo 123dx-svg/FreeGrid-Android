@@ -11,13 +11,8 @@
     updateBucket,
     addPassiveSource,
     deletePassiveSource,
-    importBackup,
-    clearAll,
-    exportJSONString,
   } from "./store.svelte";
-  import { isTauri, checkForUpdate, installUpdate, updateState } from "./updater.svelte";
 
-  const appVersion = __APP_VERSION__;
   const vm = $derived(deriveDashboard(store));
 
   const yuan = (n: number) => "¥" + Math.round(n).toLocaleString("en-US");
@@ -108,63 +103,12 @@
     const v = Number(passiveMonthly);
     return Number.isFinite(v) && v > 0 ? (v / 30).toFixed(1) : null;
   });
-
-  // ── 数据管理:导出 / 导入 / 清空 ──
-  function download(text: string, filename: string, mime: string) {
-    const blob = new Blob([text], { type: mime });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  function exportJSON() {
-    download(exportJSONString(), "freegrid-backup.json", "application/json");
-  }
-
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  const csvCell = (v: string | number) => {
-    const s = String(v);
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-
-  function exportCSV() {
-    const rows = [["类型", "日期", "类别/来源", "金额", "备注"]];
-    for (const e of store.expenses) rows.push(["支出", ymd(e.date), e.category, String(e.amount), e.note ?? ""]);
-    for (const i of store.incomes) rows.push(["收入", ymd(i.date), i.source, String(i.amount), i.note ?? ""]);
-    const body = rows.map((r) => r.map(csvCell).join(",")).join("\r\n");
-    download("\uFEFF" + body, "freegrid.csv", "text/csv;charset=utf-8");
-  }
-
-  let fileInput = $state<HTMLInputElement | null>(null);
-  function triggerImport() {
-    fileInput?.click();
-  }
-  async function onFilePicked(ev: Event) {
-    const input = ev.currentTarget as HTMLInputElement;
-    const file = input.files?.[0];
-    if (file) {
-      try {
-        importBackup(JSON.parse(await file.text()));
-      } catch {
-        /* 解析失败忽略,不崩 */
-      }
-    }
-    input.value = ""; // 复位,允许重选同一文件
-  }
-
-  function purgeAll() {
-    if (window.confirm("确定清空所有数据?此操作不可撤销")) clearAll();
-  }
 </script>
 
 <div class="assets">
   <header class="page-head">
     <p class="kicker">ASSETS</p>
-    <h1>Assets</h1>
+    <h1>我的资产</h1>
   </header>
 
   <!-- ───── 净值 ───── -->
@@ -312,81 +256,6 @@
       净值 = 资产 + 现金, 是自动相加的结果, 不能直接修改。资产 (金色) 是锁定的钱, 比如定期/股票/基金; 现金 (蓝色) 是可花的钱。收入默认进现金, 支出从现金扣。资产和现金之间用「调拨」移动。
     </p>
   </section>
-
-  <!-- ───── 数据管理 ───── -->
-  <section class="vault-card data">
-    <div class="data-head">
-      <span class="kicker">DATA</span>
-      <svg class="drive" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-        <path fill="currentColor" d="M4 5h16a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Zm0 12h16a1 1 0 0 1 1 1v0a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1a1 1 0 0 1 1-1Zm2-8h2v2H6V9Z"/>
-      </svg>
-    </div>
-
-    <div class="data-btns">
-      <button class="vbtn data-out" onclick={exportCSV}>
-        <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
-          <path fill="currentColor" d="M4 4h16v16H4V4Zm2 4v3h5V8H6Zm7 0v3h5V8h-5Zm-7 5v3h5v-3H6Zm7 0v3h5v-3h-5Z"/>
-        </svg>
-        导出 CSV
-      </button>
-      <button class="vbtn data-out" onclick={exportJSON}>
-        <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
-          <path fill="currentColor" d="M8.5 7.5 5 12l3.5 4.5L7 17.7 2.3 12 7 6.3 8.5 7.5Zm7 0L19 12l-3.5 4.5 1.5 1.2L21.7 12 17 6.3 15.5 7.5Z"/>
-        </svg>
-        导出 JSON
-      </button>
-    </div>
-
-    <button class="vbtn data-out data-import" onclick={triggerImport}>
-      <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
-        <path fill="currentColor" d="M12 3v10.6l3.3-3.3 1.4 1.4L12 17.4l-4.7-4.7 1.4-1.4 3.3 3.3V3h2ZM5 19h14v2H5v-2Z"/>
-      </svg>
-      从 JSON 导入
-    </button>
-    <input
-      bind:this={fileInput}
-      type="file"
-      accept=".json,application/json"
-      onchange={onFilePicked}
-      hidden
-    />
-    <p class="data-note">CSV 用 Excel / Numbers 打开,JSON 可回导备份</p>
-
-    <hr class="hairline soft" />
-    <button class="purge" onclick={purgeAll}>
-      <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
-        <path fill="currentColor" d="M6 7h12l-1 14H7L6 7Zm3-3h6l1 2H8l1-2ZM4 6h16v1H4V6Z"/>
-      </svg>
-      清空所有数据
-    </button>
-  </section>
-
-  <!-- ───── 检查更新(仅桌面端 Tauri)───── -->
-  {#if isTauri}
-    <section class="vault-card upd">
-      <div class="data-head">
-        <span class="kicker">UPDATE · 更新</span>
-        <span class="upd-cur num">v{appVersion}</span>
-      </div>
-      {#if updateState.available}
-        <p class="upd-msg moss">🎉 发现新版本 v{updateState.version}</p>
-        <button class="vbtn confirm" disabled={updateState.status === "downloading"} onclick={installUpdate}>
-          {updateState.status === "downloading" ? "下载安装中…" : "更新并重启"}
-        </button>
-      {:else}
-        <p class="upd-msg" class:err={updateState.status === "error"} class:moss={updateState.status === "uptodate"}>
-          {updateState.status === "checking"
-            ? "检查中…"
-            : updateState.status === "uptodate"
-              ? "已是最新版本 ✓"
-              : updateState.status === "error"
-                ? "检查失败:连不上更新服务器(可能被网络拦截)"
-                : "点一下,看看有没有新版本"}
-        </p>
-        <button class="vbtn" disabled={updateState.status === "checking"} onclick={checkForUpdate}>检查更新</button>
-      {/if}
-    </section>
-  {/if}
 
   <!-- ───── 编辑资产 ───── -->
   <Sheet open={showEditLocked} title="编辑资产" onClose={() => (showEditLocked = false)}>
@@ -764,81 +633,6 @@
     line-height: 1.65;
     color: var(--ink-muted);
     margin: var(--sp-sm) 0 0;
-  }
-
-  /* ── 数据 ── */
-  .data {
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-md);
-  }
-  .data-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    color: var(--ink-faint);
-  }
-  .data-btns {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--sp-sm);
-  }
-  .data-out {
-    color: var(--ink);
-    border-color: color-mix(in srgb, var(--ink) 38%, var(--hairline));
-    font-size: 14px;
-    padding: 11px 14px;
-  }
-  .data-import {
-    width: 100%;
-  }
-  .data-note {
-    font-size: 12px;
-    color: var(--ink-faint);
-    margin: 0;
-  }
-  .data .hairline {
-    margin: var(--sp-xs) 0;
-  }
-  .purge {
-    align-self: flex-start;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    background: transparent;
-    border: 0;
-    padding: 4px 0;
-    font-family: var(--font-rounded);
-    font-size: 14px;
-    color: var(--flame);
-    cursor: pointer;
-  }
-  .purge:hover {
-    opacity: 0.8;
-  }
-
-  /* ── 检查更新 ── */
-  .upd {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--sp-md);
-  }
-  .upd-cur {
-    font-family: var(--font-mono);
-    font-size: 12px;
-    color: var(--ink-faint);
-  }
-  .upd-msg {
-    font-size: 14px;
-    color: var(--ink-muted);
-    margin: 0;
-  }
-  .upd-msg.moss {
-    color: var(--moss);
-  }
-  .upd-msg.err {
-    color: var(--flame);
   }
 
   /* ── 窄屏塌成单列 ── */

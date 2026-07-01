@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="record_expense"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_expense"
+        android:shortcutShortLabel="@string/sc_expense"
+        android:shortcutLongLabel="@string/sc_expense_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.freegrid.app"
+            android:targetClass="com.freegrid.app.MainActivity"
+            android:data="freegrid://record/expense" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="record_income"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_income"
+        android:shortcutShortLabel="@string/sc_income"
+        android:shortcutLongLabel="@string/sc_income_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.freegrid.app"
+            android:targetClass="com.freegrid.app.MainActivity"
+            android:data="freegrid://record/income" />
+    </shortcut>
+</shortcuts>

@@ -1,7 +1,8 @@
 <script lang="ts">
   // 共享弹窗底座:遮罩 + 居中 silverline 卡片。父组件传 open + onClose,内容走 children snippet。
-  // 点遮罩 / 按 ESC 关闭。所有录入 sheet 复用它,保证视觉一致。
+  // 点遮罩 / 按 ESC / 物理返回键 关闭。所有录入 sheet 复用它,保证视觉一致。
   import type { Snippet } from "svelte";
+  import { pushOverlay, popOverlay } from "../overlay";
 
   let {
     open = false,
@@ -21,7 +22,12 @@
       if (e.key === "Escape") onClose?.();
     };
     window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
+    // 登记到全局弹层栈,供物理返回键优先关闭
+    const overlayId = pushOverlay(() => onClose?.());
+    return () => {
+      window.removeEventListener("keydown", h);
+      popOverlay(overlayId);
+    };
   });
 </script>
 
