@@ -9,7 +9,7 @@
 
 import { makeDemoData } from "./demo";
 import { suggestCategory } from "./models";
-import type { Expense, Income, PassiveSource, UserAssets, BackupJSON } from "./models";
+import type { Expense, Income, PassiveSource, UserAssets, BackupJSON, AssetItem, LiabilityItem } from "./models";
 import { exportBadgeMeta } from "./achievements.svelte";
 import { loadFqResult } from "./fq-test";
 
@@ -24,6 +24,8 @@ export const store = $state({
     lockedAssets: 0,
     cash: 0,
     liabilities: 0,
+    assetItems: [] as AssetItem[],
+    liabilityItems: [] as LiabilityItem[],
     updatedAt: new Date(),
     firstRecordDate: null as Date | null,
   } as UserAssets,
@@ -61,6 +63,12 @@ export function toBackup(): BackupJSON {
       total: store.assets.lockedAssets + store.assets.cash,
       liabilities: store.assets.liabilities || undefined,
       updated_at: store.assets.updatedAt.toISOString(),
+      asset_items: store.assets.assetItems.length
+        ? store.assets.assetItems.map((a) => ({ type: a.type, name: a.name || undefined, amount: a.amount, rate: a.rate || undefined }))
+        : undefined,
+      liability_items: store.assets.liabilityItems.length
+        ? store.assets.liabilityItems.map((l) => ({ type: l.type, amount: l.amount, rate: l.rate || undefined }))
+        : undefined,
     },
     expenses: store.expenses.map((e) => ({
       amount: e.amount,
@@ -126,10 +134,31 @@ export function fromBackup(json: BackupJSON): Parsed {
     if (all.length) frd = new Date(Math.min(...all));
   }
   const total = json.assets?.total ?? 0;
+  // 资产/负债明细(Android 扩展):有明细则用明细,总额由明细求和;无则回落旧逻辑(total→cash)
+  const assetItems: AssetItem[] = (json.assets?.asset_items ?? []).map((a) => ({
+    id: nid(),
+    type: a.type || "其他",
+    name: a.name ?? "",
+    amount: Math.max(0, a.amount || 0),
+    rate: Math.max(0, a.rate ?? 0),
+  }));
+  const liabilityItems: LiabilityItem[] = (json.assets?.liability_items ?? []).map((l) => ({
+    id: nid(),
+    type: l.type || "其他",
+    amount: Math.max(0, l.amount || 0),
+    rate: Math.max(0, l.rate ?? 0),
+  }));
+  const hasAssetItems = assetItems.length > 0;
+  const hasLiabItems = liabilityItems.length > 0;
+  const lockedFromItems = assetItems.reduce((s, a) => s + a.amount, 0);
+  const liabFromItems = liabilityItems.reduce((s, l) => s + l.amount, 0);
   const assets: UserAssets = {
-    lockedAssets: 0,
-    cash: total,
-    liabilities: typeof json.assets?.liabilities === "number" ? Math.max(0, json.assets.liabilities) : 0,
+    // 有资产明细:lockedAssets = 明细和,cash = total − 明细和(还原分桶);无明细:全落 cash(旧逻辑)
+    lockedAssets: hasAssetItems ? lockedFromItems : 0,
+    cash: hasAssetItems ? Math.max(0, total - lockedFromItems) : total,
+    liabilities: hasLiabItems ? liabFromItems : typeof json.assets?.liabilities === "number" ? Math.max(0, json.assets.liabilities) : 0,
+    assetItems,
+    liabilityItems,
     updatedAt: parseISO(json.assets?.updated_at),
     firstRecordDate: frd,
   };
@@ -174,7 +203,7 @@ function applyEmpty() {
       expenses: [],
       incomes: [],
       passiveSources: [],
-      assets: { lockedAssets: 0, cash: 0, liabilities: 0, updatedAt: new Date(), firstRecordDate: null },
+      assets: { lockedAssets: 0, cash: 0, liabilities: 0, assetItems: [], liabilityItems: [], updatedAt: new Date(), firstRecordDate: null },
     },
     false
   );
@@ -198,6 +227,20 @@ function demoRequested(): boolean {
   }
 }
 
+/** 一次性类目改名迁移:把已存的旧类目名就地改成新名(仅本机存档,不动导出格式)。 */
+function migrateCategories() {
+  const RENAME: Record<string, string> = { 育儿: "日用" };
+  let changed = false;
+  for (const e of store.expenses) {
+    const to = RENAME[e.category];
+    if (to) {
+      e.category = to;
+      changed = true;
+    }
+  }
+  if (changed) persist();
+}
+
 /** App 启动调用一次。有真实存档则水合;否则默认空白(只有 ?demo=1 才种演示数据)。 */
 export function initStore() {
   let loaded = false;
@@ -212,6 +255,9 @@ export function initStore() {
       } else {
         apply(fromBackup(parsed.data as BackupJSON), false);
         restoreBuckets(parsed.buckets); // 本地保真:还原资产/现金分桶(fromBackup 默认全落 cash)
+        migrateCategories(); // 旧类目改名(育儿→日用)
+        migrateAssetsToItems(); // 旧单值资产/负债 → 明细项
+        recomputeAssetTotals(); // 总额对齐明细(有明细时权威)
         loaded = true;
       }
     }
@@ -316,25 +362,76 @@ export function deleteTransaction(id: string, kind: "expense" | "income") {
   touch();
 }
 
-/** 调拨:cashToAsset = 现金→资产;否则资产→现金 */
-export function transfer(amount: number, cashToAsset: boolean) {
-  if (amount <= 0) return;
-  if (cashToAsset) {
-    const m = Math.min(amount, store.assets.cash);
-    store.assets.cash -= m;
-    store.assets.lockedAssets += m;
-  } else {
-    const m = Math.min(amount, store.assets.lockedAssets);
-    store.assets.lockedAssets -= m;
-    store.assets.cash += m;
+/** 资产/负债总额 = 各自明细之和(明细是权威来源;净值/自由天数用这两个总额)。 */
+function recomputeAssetTotals() {
+  store.assets.lockedAssets = store.assets.assetItems.reduce((s, a) => s + Math.max(0, a.amount), 0);
+  store.assets.liabilities = store.assets.liabilityItems.reduce((s, l) => s + Math.max(0, l.amount), 0);
+}
+
+/** 旧版单值资产/负债 → 明细项迁移(首次:有总额但无明细 → 生成一条「其他」)。 */
+function migrateAssetsToItems(): boolean {
+  const a = store.assets;
+  if (!Array.isArray(a.assetItems)) a.assetItems = [];
+  if (!Array.isArray(a.liabilityItems)) a.liabilityItems = [];
+  let changed = false;
+  if (a.assetItems.length === 0 && a.lockedAssets > 0) {
+    a.assetItems = [{ id: nid(), type: "其他", name: "", amount: a.lockedAssets }];
+    changed = true;
   }
+  if (a.liabilityItems.length === 0 && a.liabilities > 0) {
+    a.liabilityItems = [{ id: nid(), type: "其他", amount: a.liabilities, rate: 0 }];
+    changed = true;
+  }
+  return changed;
+}
+
+// ── 资产明细 CRUD ──
+export function addAssetItem(type: string, amount: number, name = "", rate = 0) {
+  if (amount <= 0) return;
+  store.assets.assetItems.push({ id: nid(), type, name: name.trim(), amount, rate: Math.max(0, rate) });
+  recomputeAssetTotals();
+  touch();
+}
+export function updateAssetItem(id: string, patch: { type?: string; amount?: number; name?: string; rate?: number }) {
+  const it = store.assets.assetItems.find((x) => x.id === id);
+  if (!it) return;
+  if (patch.type != null) it.type = patch.type;
+  if (patch.amount != null) it.amount = Math.max(0, patch.amount);
+  if (patch.name != null) it.name = patch.name.trim();
+  if (patch.rate != null) it.rate = Math.max(0, patch.rate);
+  recomputeAssetTotals();
+  touch();
+}
+export function removeAssetItem(id: string) {
+  store.assets.assetItems = store.assets.assetItems.filter((x) => x.id !== id);
+  recomputeAssetTotals();
   touch();
 }
 
-export function updateBucket(which: "locked" | "cash" | "liabilities", value: number) {
-  if (which === "locked") store.assets.lockedAssets = Math.max(0, value);
-  else if (which === "liabilities") store.assets.liabilities = Math.max(0, value);
-  else store.assets.cash = Math.max(0, value);
+// ── 负债明细 CRUD ──
+export function addLiabilityItem(type: string, amount: number, rate = 0) {
+  if (amount <= 0) return;
+  store.assets.liabilityItems.push({ id: nid(), type, amount, rate: Math.max(0, rate) });
+  recomputeAssetTotals();
+  touch();
+}
+export function updateLiabilityItem(id: string, patch: { type?: string; amount?: number; rate?: number }) {
+  const it = store.assets.liabilityItems.find((x) => x.id === id);
+  if (!it) return;
+  if (patch.type != null) it.type = patch.type;
+  if (patch.amount != null) it.amount = Math.max(0, patch.amount);
+  if (patch.rate != null) it.rate = Math.max(0, patch.rate);
+  recomputeAssetTotals();
+  touch();
+}
+export function removeLiabilityItem(id: string) {
+  store.assets.liabilityItems = store.assets.liabilityItems.filter((x) => x.id !== id);
+  recomputeAssetTotals();
+  touch();
+}
+
+export function updateBucket(which: "cash", value: number) {
+  if (which === "cash") store.assets.cash = Math.max(0, value);
   touch();
 }
 

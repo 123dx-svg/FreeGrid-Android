@@ -6,9 +6,11 @@
   import { EXPENSE_CATEGORIES, INCOME_SOURCES } from "../models";
   import { colorForName } from "../categoryColors";
   import { settings, addCustom, addTemplate, type TxTemplate } from "../settings.svelte";
+  import { deriveDashboard } from "../derive";
   import Sheet from "./Sheet.svelte";
-  import CatPicker from "./CatPicker.svelte";
+  import CatSelect from "./CatSelect.svelte";
   import WheelDateTime from "./WheelDateTime.svelte";
+  import FreedomImpact from "./FreedomImpact.svelte";
 
   type Values = { amount: number; name: string; note: string; dateTime: Date };
 
@@ -62,6 +64,11 @@
   });
 
   const valid = $derived((amount ?? 0) > 0 && (kind === "income" ? name.trim().length > 0 : true));
+
+  // 内联「自由影响」预览用:当前实时聚合(纯派生,记账即时反映)
+  const vm = $derived(
+    deriveDashboard({ expenses: store.expenses, incomes: store.incomes, passiveSources: store.passiveSources, assets: store.assets })
+  );
 
   const options = $derived(
     (kind === "expense"
@@ -161,13 +168,14 @@
 
   <div class="fg-field">
     <span class="fg-label">{kind === "expense" ? "分类" : "来源"}</span>
-    <CatPicker
+    <CatSelect
       {options}
       value={name}
       onSelect={(n) => (name = n)}
       {frequent}
       allowCustom
       onAddCustom={(n) => addCustom(kind, n)}
+      addLabel={kind === "expense" ? "分类" : "来源"}
       placeholder={kind === "expense" ? "新分类" : "新来源"}
     />
   </div>
@@ -181,6 +189,10 @@
     <span class="fg-label">日期</span>
     <WheelDateTime bind:value={dateTime} />
   </div>
+
+  {#if mode === "add"}
+    <FreedomImpact {amount} mode={kind} {vm} />
+  {/if}
 
   {#if valid}
     <button type="button" class="tpl-save" class:done={savedTpl} onclick={saveAsTemplate} disabled={savedTpl}>

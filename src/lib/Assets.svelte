@@ -6,12 +6,20 @@
   import { deriveDashboard } from "./derive";
   import Sheet from "./components/Sheet.svelte";
   import InvestSimSheet from "./components/SimSheet.svelte";
+  import CatSelect from "./components/CatSelect.svelte";
+  import { ASSET_TYPES, LIABILITY_TYPES } from "./models";
+  import { assetTypeColor, liabilityTypeColor } from "./categoryColors";
   import {
     store,
-    transfer,
     updateBucket,
     addPassiveSource,
     deletePassiveSource,
+    addAssetItem,
+    updateAssetItem,
+    removeAssetItem,
+    addLiabilityItem,
+    updateLiabilityItem,
+    removeLiabilityItem,
   } from "./store.svelte";
 
   const vm = $derived(deriveDashboard(store));
@@ -42,36 +50,83 @@
   const passiveCovered = $derived(vm.passiveRatio >= 1);
   const passiveSources = $derived(store.passiveSources); // 空 → 渲染空态提示
 
-  // ── 调拨(本地态,确认按钮按金额非空亮起)──
-  let transferDir = $state<"cashToAssets" | "assetsToCash">("cashToAssets");
-  let transferAmount = $state("");
-  const transferValid = $derived.by(() => {
-    const v = Number(transferAmount);
+  // ── 资产明细项(增/改共用一个 sheet;editId=null 为新增)──
+  const assetItems = $derived(store.assets.assetItems);
+  const assetTypeOpts = $derived(ASSET_TYPES.map((t) => ({ name: t, color: assetTypeColor(t) })));
+  let showAssetSheet = $state(false);
+  let assetEditId = $state<string | null>(null);
+  let assetType = $state<string>(ASSET_TYPES[0]);
+  let assetName = $state("");
+  let assetAmount = $state("");
+  let assetRate = $state("");
+  const assetValid = $derived.by(() => {
+    const v = Number(assetAmount);
     return Number.isFinite(v) && v > 0;
   });
-
-  function doTransfer() {
-    if (!transferValid) return;
-    transfer(Number(transferAmount), transferDir === "cashToAssets");
-    transferAmount = "";
+  function openAsset(id: string | null) {
+    assetEditId = id;
+    if (id) {
+      const it = store.assets.assetItems.find((x) => x.id === id);
+      assetType = it?.type ?? ASSET_TYPES[0];
+      assetName = it?.name ?? "";
+      assetAmount = it ? String(Math.round(it.amount)) : "";
+      assetRate = it && it.rate > 0 ? String(it.rate) : "";
+    } else {
+      assetType = ASSET_TYPES[0];
+      assetName = "";
+      assetAmount = "";
+      assetRate = "";
+    }
+    showAssetSheet = true;
+  }
+  function saveAsset() {
+    if (!assetValid) return;
+    const rate = Number(assetRate) || 0;
+    if (assetEditId) updateAssetItem(assetEditId, { type: assetType, amount: Number(assetAmount), name: assetName, rate });
+    else addAssetItem(assetType, Number(assetAmount), assetName, rate);
+    showAssetSheet = false;
+  }
+  function delAsset() {
+    if (assetEditId) removeAssetItem(assetEditId);
+    showAssetSheet = false;
   }
 
-  // ── 编辑资产 / 现金桶(prefill 在 open 时取最新值,避免捕获旧值)──
-  let showEditLocked = $state(false);
-  let editLockedAmount = $state("");
-  const editLockedValid = $derived.by(() => {
-    if (editLockedAmount.trim() === "") return false;
-    const v = Number(editLockedAmount);
-    return Number.isFinite(v) && v >= 0; // 桶是绝对值,0 合法
+  // ── 负债明细项(含年化利率)──
+  const liabilityItems = $derived(store.assets.liabilityItems);
+  const liabTypeOpts = $derived(LIABILITY_TYPES.map((t) => ({ name: t, color: liabilityTypeColor(t) })));
+  let showLiabSheet = $state(false);
+  let liabEditId = $state<string | null>(null);
+  let liabType = $state<string>(LIABILITY_TYPES[0]);
+  let liabAmount = $state("");
+  let liabRate = $state("");
+  const liabValid = $derived.by(() => {
+    const v = Number(liabAmount);
+    return Number.isFinite(v) && v > 0;
   });
-  function openEditLocked() {
-    editLockedAmount = String(Math.round(store.assets.lockedAssets));
-    showEditLocked = true;
+  function openLiab(id: string | null) {
+    liabEditId = id;
+    if (id) {
+      const it = store.assets.liabilityItems.find((x) => x.id === id);
+      liabType = it?.type ?? LIABILITY_TYPES[0];
+      liabAmount = it ? String(Math.round(it.amount)) : "";
+      liabRate = it && it.rate > 0 ? String(it.rate) : "";
+    } else {
+      liabType = LIABILITY_TYPES[0];
+      liabAmount = "";
+      liabRate = "";
+    }
+    showLiabSheet = true;
   }
-  function saveEditLocked() {
-    if (!editLockedValid) return;
-    updateBucket("locked", Number(editLockedAmount));
-    showEditLocked = false;
+  function saveLiab() {
+    if (!liabValid) return;
+    const rate = Number(liabRate) || 0;
+    if (liabEditId) updateLiabilityItem(liabEditId, { type: liabType, amount: Number(liabAmount), rate });
+    else addLiabilityItem(liabType, Number(liabAmount), rate);
+    showLiabSheet = false;
+  }
+  function delLiab() {
+    if (liabEditId) removeLiabilityItem(liabEditId);
+    showLiabSheet = false;
   }
 
   let showEditCash = $state(false);
@@ -89,23 +144,6 @@
     if (!editCashValid) return;
     updateBucket("cash", Number(editCashAmount));
     showEditCash = false;
-  }
-
-  let showEditLiab = $state(false);
-  let editLiabAmount = $state("");
-  const editLiabValid = $derived.by(() => {
-    if (editLiabAmount.trim() === "") return false;
-    const v = Number(editLiabAmount);
-    return Number.isFinite(v) && v >= 0;
-  });
-  function openEditLiab() {
-    editLiabAmount = String(Math.round(store.assets.liabilities));
-    showEditLiab = true;
-  }
-  function saveEditLiab() {
-    if (!editLiabValid) return;
-    updateBucket("liabilities", Number(editLiabAmount));
-    showEditLiab = false;
   }
 
   // ── 添加被动收入源 ──
@@ -147,7 +185,7 @@
         <p class="nw-caption">上次更新 · {updatedAgo}</p>
       </section>
 
-      <!-- ───── 双桶:资产(金/锁) + 现金(蓝/钞) ───── -->
+      <!-- ───── 三桶横排:资产(金/锁) + 现金(蓝/钞) + 负债(从净值扣减)───── -->
       <div class="buckets">
         <section class="vault-card bucket">
           <div class="bucket-head">
@@ -157,13 +195,8 @@
               </svg>
             </span>
             <span class="kicker">资产</span>
-            <button class="pencil" aria-label="编辑资产" onclick={openEditLocked}>
-              <svg viewBox="0 0 24 24" width="13" height="13">
-                <path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25ZM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83Z"/>
-              </svg>
-            </button>
           </div>
-          <div class="bucket-amount num" style="font-size:{moneyFont(vm.lockedAssets, 26)}px">{yuan(vm.lockedAssets)}</div>
+          <div class="bucket-amount num" style="font-size:{moneyFont(vm.lockedAssets, 21)}px">{yuan(vm.lockedAssets)}</div>
         </section>
 
         <section class="vault-card bucket">
@@ -180,31 +213,73 @@
               </svg>
             </button>
           </div>
-          <div class="bucket-amount num" style="font-size:{moneyFont(vm.cash, 26)}px">{yuan(vm.cash)}</div>
+          <div class="bucket-amount num" style="font-size:{moneyFont(vm.cash, 21)}px">{yuan(vm.cash)}</div>
+        </section>
+
+        <section class="vault-card bucket liab">
+          <div class="bucket-head">
+            <span class="glyph flame-g">
+              <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+                <path fill="currentColor" d="M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm3 8h10v2H7v-2Z"/>
+              </svg>
+            </span>
+            <span class="kicker">负债</span>
+          </div>
+          <div class="bucket-amount num" class:neg={vm.liabilities > 0} style="font-size:{moneyFont(vm.liabilities, 21, 1)}px">
+            {vm.liabilities > 0 ? "−" + yuan(vm.liabilities) : yuan(0)}
+          </div>
         </section>
       </div>
 
-      <!-- ───── 负债(从净值扣减)───── -->
-      <section class="vault-card bucket liab">
-        <div class="bucket-head">
-          <span class="glyph flame-g">
-            <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
-              <path fill="currentColor" d="M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm3 8h10v2H7v-2Z"/>
-            </svg>
-          </span>
-          <span class="kicker">负债</span>
-          <button class="pencil" aria-label="编辑负债" onclick={openEditLiab}>
-            <svg viewBox="0 0 24 24" width="13" height="13">
-              <path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25ZM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83Z"/>
-            </svg>
+      <!-- ───── 资产明细(定期/基金/股票…)───── -->
+      <section class="vault-card detail">
+        <div class="detail-head">
+          <span class="kicker">资产明细</span>
+          <button class="add-btn" aria-label="添加资产" onclick={() => openAsset(null)}>
+            <svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2h6Z"/></svg>
           </button>
         </div>
-        <div class="bucket-amount num" class:neg={vm.liabilities > 0} style="font-size:{moneyFont(vm.liabilities, 22, 1)}px">
-          {vm.liabilities > 0 ? "−" + yuan(vm.liabilities) : yuan(0)}
-        </div>
+        {#if assetItems.length === 0}
+          <p class="detail-empty">还没有资产,点右上 + 添加(定期 / 基金 / 股票 / 房产…)</p>
+        {:else}
+          <div class="item-list">
+            {#each assetItems as it (it.id)}
+              <button class="item-row" onclick={() => openAsset(it.id)}>
+                <span class="item-dot" style="background:{assetTypeColor(it.type)}"></span>
+                <span class="item-type">{it.type}</span>
+                {#if it.name}<span class="item-name">{it.name}</span>{/if}
+                {#if it.rate > 0}<span class="item-rate gain num">{it.rate}%</span>{/if}
+                <span class="item-amt num">{yuan(it.amount)}</span>
+              </button>
+            {/each}
+          </div>
+        {/if}
       </section>
 
-      <!-- ───── 被动收入 ───── -->
+      <!-- ───── 负债明细(房贷/车贷…,含年化利率)───── -->
+      <section class="vault-card detail">
+        <div class="detail-head">
+          <span class="kicker">负债明细</span>
+          <button class="add-btn" aria-label="添加负债" onclick={() => openLiab(null)}>
+            <svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2h6Z"/></svg>
+          </button>
+        </div>
+        {#if liabilityItems.length === 0}
+          <p class="detail-empty">没有负债 👍(有房贷 / 车贷 / 信用卡可添加,标注利率后 AI 会优先建议还高息的)</p>
+        {:else}
+          <div class="item-list">
+            {#each liabilityItems as it (it.id)}
+              <button class="item-row" onclick={() => openLiab(it.id)}>
+                <span class="item-dot" style="background:{liabilityTypeColor(it.type)}"></span>
+                <span class="item-type">{it.type}</span>
+                {#if it.rate > 0}<span class="item-rate num">{it.rate}%</span>{/if}
+                <span class="item-amt num neg">−{yuan(it.amount)}</span>
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </section>
+
       <section class="vault-card passive">
         <div class="passive-head">
           <span class="kicker">PASSIVE · 被动收入</span>
@@ -260,42 +335,6 @@
       <!-- ───── 模拟一笔投资(看清年化陷阱)───── -->
       <button class="invest-btn" onclick={() => (showInvest = true)}>⚡ 模拟一笔 · 看清金融陷阱 →</button>
 
-      <!-- ───── 调拨 ───── -->
-      <section class="vault-card transfer">
-        <span class="kicker">调拨</span>
-
-        <div class="seg" role="group" aria-label="调拨方向">
-          <button
-            class="seg-opt"
-            class:on={transferDir === "cashToAssets"}
-            onclick={() => (transferDir = "cashToAssets")}
-          >现金 → 资产</button>
-          <button
-            class="seg-opt"
-            class:on={transferDir === "assetsToCash"}
-            onclick={() => (transferDir = "assetsToCash")}
-          >资产 → 现金</button>
-        </div>
-
-        <div class="amount-row">
-          <span class="amount-yuan">¥</span>
-          <input
-            class="amount-input num"
-            type="text"
-            inputmode="decimal"
-            placeholder="0"
-            bind:value={transferAmount}
-          />
-        </div>
-
-        <button class="vbtn confirm" class:dim={!transferValid} onclick={doTransfer}>
-          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
-            <path fill="currentColor" d="M7 7h11l-3-3 1.4-1.4L21.8 8l-5.4 5.4L15 12l3-3H7V7Zm10 10H6l3 3-1.4 1.4L2.2 16l5.4-5.4L9 12l-3 3h11v2Z"/>
-          </svg>
-          确认调拨
-        </button>
-      </section>
-
   <!-- ───── 说明 ───── -->
   <section class="explain">
     <div class="explain-head">
@@ -305,25 +344,54 @@
       <span class="explain-title">净值 · 资产 · 现金 · 负债</span>
     </div>
     <p class="explain-body">
-      净值 = 资产 + 现金 − 负债, 是自动算出来的结果, 不能直接改。资产 (金色) 是暂时不动的钱, 比如定期 / 股票 / 基金; 现金 (蓝色) 是随时能花的钱; 负债 (红色) 是欠的钱, 比如房贷 / 车贷 / 信用卡, 会拉低净值、也会缩短自由天数。平时收入默认进现金, 支出从现金扣; 资产和现金之间用「调拨」互相搬。
+      净值 = 资产 + 现金 − 负债, 是自动算出来的结果, 不能直接改。资产 (金色) 是暂时不动的钱, 按类型分条记 —— 定期 / 基金 / 股票 / 债券 / 房产 / 黄金 / 加密货币; 现金 (蓝色) 是随时能花的钱; 负债 (红色) 是欠的钱 —— 房贷 / 车贷 / 信用卡 等, 建议标注年化利率, 会拉低净值、也会缩短自由天数。平时收入默认进现金, 支出从现金扣; 资产 / 负债只在你手动增删改时变。
     </p>
   </section>
 
-  <!-- ───── 编辑资产 ───── -->
-  <Sheet open={showEditLocked} title="编辑资产" onClose={() => (showEditLocked = false)}>
+  <!-- ───── 添加 / 编辑资产项 ───── -->
+  <Sheet open={showAssetSheet} title={assetEditId ? "编辑资产" : "添加资产"} onClose={() => (showAssetSheet = false)}>
     <div class="fg-field">
-      <label class="fg-label" for="edit-locked-input">新金额(元)</label>
-      <input
-        id="edit-locked-input"
-        class="fg-input fg-amount num"
-        type="text"
-        inputmode="decimal"
-        placeholder="0"
-        bind:value={editLockedAmount}
-      />
-      <p class="sheet-hint">锁定的钱 — 定期 / 股票 / 基金 / 不动产等</p>
+      <span class="fg-label">类型</span>
+      <CatSelect options={assetTypeOpts} value={assetType} onSelect={(n) => (assetType = n)} addLabel="类型" />
     </div>
-    <button class="fg-btn" disabled={!editLockedValid} onclick={saveEditLocked}>确认</button>
+    <div class="fg-field">
+      <label class="fg-label" for="asset-amt">金额(元)</label>
+      <input id="asset-amt" class="fg-input fg-amount num" type="text" inputmode="decimal" placeholder="0" bind:value={assetAmount} />
+    </div>
+    <div class="fg-field">
+      <label class="fg-label" for="asset-name">备注(可选)</label>
+      <input id="asset-name" class="fg-input" type="text" placeholder="比如:招行三年定期 / 沪深300" bind:value={assetName} />
+    </div>
+    <div class="fg-field">
+      <label class="fg-label" for="asset-rate">年化收益率 %(可选)</label>
+      <input id="asset-rate" class="fg-input num" type="text" inputmode="decimal" placeholder="如 2.5 / 8" bind:value={assetRate} />
+      <p class="sheet-hint">定期 / 债券 / 基金等有预期年化的可填,AI 会参考配置收益。</p>
+    </div>
+    <div class="sheet-actions">
+      {#if assetEditId}<button class="fg-btn ghostbtn danger" onclick={delAsset}>删除</button>{/if}
+      <button class="fg-btn" disabled={!assetValid} onclick={saveAsset}>{assetEditId ? "保存" : "添加"}</button>
+    </div>
+  </Sheet>
+
+  <!-- ───── 添加 / 编辑负债项 ───── -->
+  <Sheet open={showLiabSheet} title={liabEditId ? "编辑负债" : "添加负债"} onClose={() => (showLiabSheet = false)}>
+    <div class="fg-field">
+      <span class="fg-label">类型</span>
+      <CatSelect options={liabTypeOpts} value={liabType} onSelect={(n) => (liabType = n)} addLabel="类型" />
+    </div>
+    <div class="fg-field">
+      <label class="fg-label" for="liab-amt">未还本金(元)</label>
+      <input id="liab-amt" class="fg-input fg-amount num" type="text" inputmode="decimal" placeholder="0" bind:value={liabAmount} />
+    </div>
+    <div class="fg-field">
+      <label class="fg-label" for="liab-rate">年化利率 %(可选)</label>
+      <input id="liab-rate" class="fg-input num" type="text" inputmode="decimal" placeholder="如 4.9 / 18.25" bind:value={liabRate} />
+      <p class="sheet-hint">标注利率后,AI 年报会优先建议先还利率最高的那笔。</p>
+    </div>
+    <div class="sheet-actions">
+      {#if liabEditId}<button class="fg-btn ghostbtn danger" onclick={delLiab}>删除</button>{/if}
+      <button class="fg-btn" disabled={!liabValid} onclick={saveLiab}>{liabEditId ? "保存" : "添加"}</button>
+    </div>
   </Sheet>
 
   <!-- ───── 编辑现金 ───── -->
@@ -341,23 +409,6 @@
       <p class="sheet-hint">可花的钱 — 活期 / 钱包余额 / 微信支付宝</p>
     </div>
     <button class="fg-btn" disabled={!editCashValid} onclick={saveEditCash}>确认</button>
-  </Sheet>
-
-  <!-- ───── 编辑负债 ───── -->
-  <Sheet open={showEditLiab} title="编辑负债" onClose={() => (showEditLiab = false)}>
-    <div class="fg-field">
-      <label class="fg-label" for="edit-liab-input">负债总额(元)</label>
-      <input
-        id="edit-liab-input"
-        class="fg-input fg-amount num"
-        type="text"
-        inputmode="decimal"
-        placeholder="0"
-        bind:value={editLiabAmount}
-      />
-      <p class="sheet-hint">欠的钱 — 房贷 / 车贷 / 信用卡 / 花呗等未还本金。填总额即可,会从净值扣减。</p>
-    </div>
-    <button class="fg-btn" disabled={!editLiabValid} onclick={saveEditLiab}>确认</button>
   </Sheet>
 
   <!-- ───── 添加被动收入 ───── -->
@@ -449,18 +500,18 @@
   /* ── 双桶 ── */
   .buckets {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--sp-lg);
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--sp-md);
   }
   .bucket {
-    padding: var(--sp-lg) var(--sp-xl);
+    padding: var(--sp-md) var(--sp-md);
     min-width: 0;
     overflow: hidden;
   }
   .bucket-head {
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
   }
   .glyph {
     display: inline-flex;
@@ -479,7 +530,7 @@
     color: var(--flame);
   }
   .bucket.liab {
-    padding: var(--sp-md) var(--sp-xl);
+    padding: var(--sp-md) var(--sp-md);
   }
   .pencil {
     margin-left: auto;
@@ -630,88 +681,95 @@
     color: var(--flame);
   }
 
-  /* ── 调拨 ── */
-  .transfer {
+  /* ── 资产/负债明细 ── */
+  .detail-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: var(--sp-sm);
+  }
+  .detail-head .add-btn {
+    margin-left: auto;
+  }
+  .detail-empty {
+    margin: 0;
+    font-size: 13px;
+    color: var(--ink-faint);
+    line-height: 1.5;
+  }
+  .item-list {
     display: flex;
     flex-direction: column;
-    gap: var(--sp-md);
   }
-  .seg {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 3px;
-    padding: 3px;
-    background: var(--mist2);
-    border-radius: 10px;
-    border: 1px solid var(--hairline-soft);
-  }
-  .seg-opt {
-    font-family: var(--font-rounded);
-    font-size: 13px;
-    padding: 8px 6px;
-    border-radius: 7px;
-    border: 0;
-    background: transparent;
-    color: var(--ink-muted);
-    cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease;
-  }
-  .seg-opt.on {
-    background: var(--surface-hi);
-    color: var(--ink);
-    box-shadow: 0 1px 0 var(--hairline-soft);
-  }
-  .amount-row {
+  .item-row {
     display: flex;
     align-items: center;
-    gap: 6px;
-    border: 1px solid var(--hairline);
-    border-radius: 10px;
-    padding: 8px 12px;
-  }
-  .amount-yuan {
-    font-size: 19px;
-    color: var(--ink-faint);
-  }
-  .amount-input {
-    flex: 1;
-    border: 0;
+    gap: 8px;
+    width: 100%;
+    padding: 11px 2px;
     background: transparent;
+    border: 0;
+    border-top: 1px solid var(--hairline-soft);
     color: var(--ink);
     font-family: var(--font-rounded);
-    font-size: 19px;
-    outline: none;
+    font-size: 14px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .item-row:first-child {
+    border-top: 0;
+  }
+  .item-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    flex: none;
+  }
+  .item-type {
+    font-weight: 500;
+  }
+  .item-name {
+    color: var(--ink-faint);
+    font-size: 13px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
     min-width: 0;
   }
-  .amount-input::placeholder {
-    color: var(--ink-ghost);
+  .item-rate {
+    font-size: 12px;
+    color: var(--flame);
+    background: color-mix(in srgb, var(--flame) 12%, transparent);
+    padding: 1px 6px;
+    border-radius: 6px;
   }
-
-  /* ── 共用按钮 ── */
-  .vbtn {
-    font-family: var(--font-rounded);
-    font-size: 15px;
-    padding: 12px 18px;
-    border-radius: 999px;
+  .item-rate.gain {
+    color: var(--moss);
+    background: color-mix(in srgb, var(--moss) 14%, transparent);
+  }
+  .item-amt {
+    margin-left: auto;
+    flex: none;
+  }
+  .item-amt.neg {
+    color: var(--flame);
+  }
+  .sheet-actions {
+    display: flex;
+    gap: var(--sp-md);
+  }
+  .sheet-actions .fg-btn {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .ghostbtn {
     background: transparent;
     border: 1px solid var(--hairline);
-    color: var(--ink);
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 7px;
-    transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+    color: var(--ink-muted);
   }
-  .vbtn:hover {
-    background: var(--mist2);
-  }
-  .confirm {
-    border-color: color-mix(in srgb, var(--sky-deep) 45%, var(--hairline));
-    color: var(--sky-deep);
-  }
-  .confirm.dim {
-    opacity: 0.4;
+  .ghostbtn.danger {
+    color: var(--flame);
+    border-color: color-mix(in srgb, var(--flame) 40%, transparent);
   }
 
   /* ── 说明 ── */
@@ -747,7 +805,7 @@
       font-size: 48px;
     }
   }
-  @media (max-width: 420px) {
+  @media (max-width: 340px) {
     .buckets {
       grid-template-columns: 1fr;
     }

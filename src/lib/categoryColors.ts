@@ -15,7 +15,7 @@ export const CATEGORY_COLORS: Record<string, string> = {
   交通: "#6FB1E0", // 天蓝
   车贷: "#5FA8A0", // 青绿
   购物: "#B49AE0", // 紫
-  育儿: "#E0A0C0", // 柔粉
+  日用: "#E0A0C0", // 柔粉
   保险: "#6FA8C9", // 蓝
   医疗: "#E0727A", // 玫红
   成长投资: "#8CD19E", // 苔绿
@@ -26,6 +26,7 @@ export const CATEGORY_COLORS: Record<string, string> = {
   早餐: "#E9C46A",
   午餐: "#E8A35C",
   晚餐: "#E88D6B",
+  育儿: "#E0A0C0", // 旧「育儿」→ 现「日用」,保留同色兼容历史数据
 };
 
 const FALLBACK_COLOR = "#8FA3C4";
@@ -72,6 +73,37 @@ export function incomeColor(index: number): string {
 
 /** 被动收入源专用色(与营收来源区分,统一用金色系强调"睡后收入") */
 export const PASSIVE_COLOR = "#EBCC73";
+
+/** 资产类型固定色(金色/暖色系,呼应"资产=金格") */
+const ASSET_TYPE_COLORS: Record<string, string> = {
+  定期: "#E9C46A", // 暖琥珀
+  基金: "#6FB1E0", // 天蓝
+  股票: "#E0727A", // 玫红
+  债券: "#8CD19E", // 苔绿
+  房产: "#D89A5C", // 暖橙
+  黄金: "#EBCC73", // 金
+  加密货币: "#B49AE0", // 紫
+  其他: "#9AA8C0", // 灰蓝
+};
+/** 负债类型固定色(暖红/警示系,呼应"负债=红字") */
+const LIABILITY_TYPE_COLORS: Record<string, string> = {
+  房贷: "#E0846B", // 砖红
+  车贷: "#E8A35C", // 橙
+  信用卡: "#E0727A", // 玫红
+  消费贷: "#D98A9A", // 粉红
+  花呗白条: "#E29B7A", // 陶土
+  网贷: "#C96A6A", // 深红
+  其他: "#B58A8A", // 灰红
+};
+
+/** 资产类型取色(未知走通用 hash 板) */
+export function assetTypeColor(type: string): string {
+  return ASSET_TYPE_COLORS[type] ?? NAME_PALETTE[hashName(type) % NAME_PALETTE.length];
+}
+/** 负债类型取色 */
+export function liabilityTypeColor(type: string): string {
+  return LIABILITY_TYPE_COLORS[type] ?? NAME_PALETTE[hashName(type) % NAME_PALETTE.length];
+}
 
 /** 分类的规范顺序索引(用于排序时的稳定 tie-break) */
 export function categoryOrder(name: string): number {

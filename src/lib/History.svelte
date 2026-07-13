@@ -8,8 +8,9 @@
   import LevelCard from "./components/LevelCard.svelte";
   import SpendSimSheet from "./components/SpendSimSheet.svelte";
   import { reached } from "./level.svelte";
-  import { buildAnnualReport, buildNarrative, availableYears, type Scope, type Quarter } from "./annual";
+  import { buildAnnualReport, buildNarrative, availableYears, type Scope, type Quarter, type Slice } from "./annual";
   import { deriveDashboard } from "./derive";
+  import { assetTypeColor, liabilityTypeColor } from "./categoryColors";
   import { markBadgeEvent } from "./achievements.svelte";
   import { aiReady, cacheGet, cacheSet, cacheGetAt, aiConfig } from "./ai/config.svelte";
   import { chat, fmtCost } from "./ai/llm";
@@ -194,6 +195,39 @@
     deriveDashboard({ expenses: store.expenses, incomes: store.incomes, passiveSources: store.passiveSources, assets: store.assets })
   );
   const liveState = $derived(vm.state);
+
+  // 资产配置 / 负债构成(当前存量快照,按类型聚合成饼图切片)
+  function slicesByType(items: { type: string; amount: number }[], colorFn: (t: string) => string): Slice[] {
+    const total = items.reduce((s, i) => s + i.amount, 0);
+    const byType = new Map<string, number>();
+    for (const it of items) byType.set(it.type, (byType.get(it.type) ?? 0) + it.amount);
+    return [...byType.entries()]
+      .map(([name, value]) => ({ name, value, pct: total > 0 ? (value / total) * 100 : 0, color: colorFn(name) }))
+      .sort((a, b) => b.value - a.value);
+  }
+  const assetSlices = $derived(slicesByType(store.assets.assetItems, assetTypeColor));
+  const liabilitySlices = $derived(slicesByType(store.assets.liabilityItems, liabilityTypeColor));
+  const hasAllocation = $derived(assetSlices.length > 0 || liabilitySlices.length > 0);
+
+  // AI 用:资产配置按类型聚合(占比 + 金额加权年化收益率)
+  const assetAllocation = $derived.by(() => {
+    const items = store.assets.assetItems;
+    const total = items.reduce((s, i) => s + i.amount, 0);
+    const byType = new Map<string, { amount: number; rateW: number }>();
+    for (const it of items) {
+      const e = byType.get(it.type) ?? { amount: 0, rateW: 0 };
+      e.amount += it.amount;
+      e.rateW += it.amount * (it.rate || 0);
+      byType.set(it.type, e);
+    }
+    return [...byType.entries()]
+      .map(([type, e]) => ({
+        type,
+        pct: total > 0 ? Math.round((e.amount / total) * 100) : 0,
+        rate: e.amount > 0 ? Math.round((e.rateW / e.amount) * 10) / 10 : 0,
+      }))
+      .sort((a, b) => b.pct - a.pct);
+  });
   // 省钱模拟用:日均净烧 + 各支出类目的月均金额(取自当前 scope 的年报聚合)
   const spendDailyNetBurn = $derived(Math.max(0, vm.dailyBurn - vm.dailyPassive));
   const spendCats = $derived(
@@ -256,6 +290,8 @@
         cash: vm.cash,
         liabilities: vm.liabilities,
         passivePct: Math.round((vm.passiveRatio || 0) * 100),
+        allocation: assetAllocation,
+        debts: store.assets.liabilityItems.map((l) => ({ type: l.type, amount: l.amount, rate: l.rate })),
       },
       prev:
         aiPrevReport && (aiPrevReport.expenseCount > 0 || aiPrevReport.incomeCount > 0)
@@ -607,6 +643,24 @@
               <p class="rp-sec">每月进出 · 收入 × 支出</p>
               <BarChart data={report.monthly} />
             </div>
+
+            <!-- 资产配置 / 负债构成(当前存量快照)-->
+            {#if hasAllocation}
+              <div class="rp-charts">
+                {#if assetSlices.length > 0}
+                  <div class="rp-chart">
+                    <p class="rp-sec">资产配置 · 当前</p>
+                    <DonutChart slices={assetSlices} centerValue={yuan0(vm.lockedAssets)} centerLabel="总资产" size={160} />
+                  </div>
+                {/if}
+                {#if liabilitySlices.length > 0}
+                  <div class="rp-chart">
+                    <p class="rp-sec">负债构成 · 当前</p>
+                    <DonutChart slices={liabilitySlices} centerValue={yuan0(vm.liabilities)} centerLabel="总负债" size={160} />
+                  </div>
+                {/if}
+              </div>
+            {/if}
 
             <!-- 钱主要花在这几处 -->
             {#if report.expenseSlices.length > 0}

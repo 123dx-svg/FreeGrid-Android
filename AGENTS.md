@@ -46,7 +46,7 @@
 - **release keystore**：`F:\AIGenerate\APP\keystore\freegrid-release.jks`（仓库外，有效期 ~27 年，别名 `freegrid`）。
 - **口令**：在 `android/keystore.properties`（**已 gitignore，不入库**）。证书 `CN=FreeGrid`，SHA-256 指纹 `0ce657932cd56ec583fd081812d2870a3c50ed9f655d33abadd5dadab6405d87`。
 - **铁律 1**：`freegrid-release.jks` + `keystore.properties` **必须异地备份**。丢了 = 所有老用户永远无法再升级。
-- **铁律 2**：每次发布 **`versionCode` 必须 +1**（在 `android/app/build.gradle`）。当前已到 83（v2.60）。
+- **铁律 2**：每次发布 **`versionCode` 必须 +1**（在 `android/app/build.gradle`）。当前已到 87（v2.64）。
 - **铁律 3**：**debug 签名与 release 签名互不兼容**。给用户/装真机**永远用 release 版**（`build-release.bat`）。debug↔release 互切必须卸载=丢数据。
 - **铁律 4**：升级用 `adb install -r <release-apk>`（不卸载，保数据）。✅ 已实测 vc2→vc3 数据保留。
 - 用户的**小米 14 Pro 从第一次就装 release 版**，否则将来切 release 要卸载丢数据。
@@ -66,6 +66,32 @@
 - **红线**:全本机、不联网、不进跨端账单备份(`freegrid-backup.json` 格式不变、iOS/web 兼容);AI 密钥不进导出文件;`restore` 仅接受 `freegrid-` 前缀键(防越权写)。无新依赖(Filesystem/App 已装)。`backup-full.test.ts` 6 测,`npm test` 46/46,`svelte-check` 0 error。
 
 ## 已完成的适配
+- ✅ 资产/负债总额去重(vc87/v2.64,方案 B):顶部三列总览(资产/现金/负债)与「资产明细/负债明细」标题里的总额重复。改:①删「资产明细」「负债明细」标题里的 `.detail-total`(:248/:274)→ 标题只留 kicker + 右侧「＋」;②去掉资产/负债总览卡的铅笔(加项走明细区「＋」、编辑走点明细行),**现金卡保留铅笔**(现金无明细,只能直接编辑);③删无用 `.detail-total` CSS。心智模型:上=三个总额一眼看全,下=组成项列表。纯布局,不动数据/净值/备份/AI。真机验证:总额只出现一次、「＋」加项 sheet 正常。
+- ✅ 资产明细也可填年化收益率 + 编辑 sheet 按钮对齐(vc86/v2.63):
+  - **资产年化收益率**:`AssetItem` 加 `rate`(年化收益率%,0=未填);`BackupAssetItemJSON` 加 `rate`;`toBackup/fromBackup`、`addAssetItem(...,rate)`/`updateAssetItem({rate})`、`demo.ts` 均带上。`Assets.svelte` 资产 sheet 加「年化收益率%(可选)」字段(提示「定期/债券/基金等有预期年化的可填」);资产项行显示**绿色** `.item-rate.gain` 徽章(`--moss`,区别于负债的红色徽章)。
+  - **AI 参考资产收益**:`History` `assetAllocation` 按类型聚合时算**金额加权平均年化**;`annualMessages` `allocation:[{type,pct,rate?}]`,allocLine 输出「定期 37%(年化2.6%)…」,sys 追加「若给了各类年化收益率,可点评配置效率、低收益占比是否过高」,cacheKey allocSig 纳入 rate。
+  - **编辑 sheet 按钮对齐**:`.sheet-actions .fg-btn` 由「删除 `flex:0 0 auto`+定宽 / 保存 `flex:1`」(保存被挤出)改为**两者 `flex:1 1 0`+`min-width:0` 等宽两列**;`.ghostbtn.danger` 去掉定宽/额外 padding。资产/负债两个 sheet 共用。真机验证:删除/保存等宽,资产可填年化并显示绿徽章。
+- ✅ 资产/负债类型化 + 年报饼图 + AI 纳入配置/高息负债(vc85/v2.62):
+  - **数据模型(加字段,向后兼容,不改 localStorage 键)**:`models.ts` 加 `AssetItem{id,type,name,amount}` / `LiabilityItem{id,type,amount,rate}`;`UserAssets` 加 `assetItems[]`/`liabilityItems[]`;`ASSET_TYPES`(定期/基金/股票/债券/房产/黄金/**加密货币**/其他)、`LIABILITY_TYPES`(房贷/车贷/信用卡/消费贷/花呗白条/网贷/其他)。`lockedAssets`/`liabilities` 变成「明细之和」(仍是净值/自由天数的权威总额);**现金**保持单独直接编辑桶(不细分)。
+  - **配色**:`categoryColors.ts` 加 `assetTypeColor()`(暖/金色系)、`liabilityTypeColor()`(暖红/警示系),记账色点、明细列表、年报饼图共用。
+  - **store**:`recomputeAssetTotals()`(总额=明细和)、`migrateAssetsToItems()`(旧单值 lockedAssets/liabilities>0 且无明细 → 各生成一条「其他」)、CRUD `add/update/removeAssetItem` + `add/update/removeLiabilityItem`(每次改后 recompute+persist);`initStore` 水合后 `migrateCategories()`→`migrateAssetsToItems()`→`recomputeAssetTotals()`。`updateBucket` 现仅管 `"cash"`。
+  - **备份(跨端兼容)**:`BackupAssetsJSON` 加可选 `asset_items`/`liability_items`(snake_case);`toBackup` 写明细(空则 undefined),`total`=资产+现金、`liabilities`=负债和(iOS/web 仍读总额)。`fromBackup`:有明细→`lockedAssets`=明细和、`cash`=`total−明细和`(还原分桶)、`liabilities`=明细和;无明细→回落旧逻辑(total→cash)。真机 import 验证:定期/基金/股票/黄金 + 房贷@4.9%/信用卡@18.25% 全还原,净值不变、被动收入回来。
+  - **资产页 `Assets.svelte`**:**移除调拨**(`transfer` 已删,`.transfer/.seg/.amount-row/.vbtn` CSS 也删);3 张汇总卡保留(资产/现金/负债 total,现金 pencil 直接编辑,资产/负债 pencil→加项);新增「资产明细」「负债明细」两区(色点+类型+名称/利率徽章+金额,点行编辑,`.detail/.item-row/.item-dot/.item-rate` 等);新增/编辑项 Sheet 用 `CatSelect` 选类型 + 金额(+资产 name / +负债 年化利率%)+ 删除;说明文案改「资产按类型分条记…负债建议标注年化利率…资产/负债只在手动增删改时变」。
+  - **年报饼图(`History.svelte` 数据看板)**:`slicesByType()` 按类型聚合成 `Slice[]`;`资产配置·当前` + `负债构成·当前` 两个 `DonutChart`(有明细才显示,当前存量快照)。真机验证:资产配置 定期 37.5%/基金 28.13%/股票 21.88%/黄金 12.5%,负债构成 房贷 75%/信用卡 25%。
+  - **AI(`prompts.ts` `annualMessages`)**:`assets` 入参加 `allocation:[{type,pct}]` + `debts:[{type,amount,rate}]`;有明细则 sys 追加「点评资产配置(集中度/流动性)+ 高息负债优先(先还年化最高的,雪崩法;低息房贷不必急)」;user 加 `资产配置`/`负债清单` 行;cacheKey 纳入 alloc/debt 签名(`shortHash`)。`History` letterMsgs 传 `allocation`(=assetSlices)+`debts`(=liabilityItems)。真机验证:董事长报告「优先还清年化18.25%的信用卡(雪崩法),房贷4.9%可正常月供;资产配置定期占比偏高,可提高基金/黄金比例」。
+  - **promo 生成器**(`tools/gen-promo-data.mjs`):`backup.assets` 加 `asset_items`/`liability_items`(定期6w/基金4.5w/股票3.5w/黄金2w + 房贷1.5w@4.9%/信用卡0.5w@18.25%),供演示与真机测试。
+  - `svelte-check` 0 error(5 warning),`npm test` 46/46,真机 7 项全过(迁移/明细增删改/净值不变/饼图/AI/备份还原/passive 恢复)。
+- ✅ 仪表盘紧凑化(照搬 iOS)+ 分类下拉 + 记账内联预览 + 今日条 + 格子/动画(vc84/v2.61):对齐 iOS `coni555/FreeGrid-Freedom`。
+  - **三数据横排**:`Dashboard.svelte` `.stats` 由竖排(vc33)改回 `grid repeat(3,1fr)`,数字 40→26px,少占约 2 张卡高。
+  - **按钮一行**:`.actions` 拆成 `.act-pair`(记支出/记收入 固定两列,手机也不塌)+ `.act-sim`(⚡模拟一笔 独占一行);移除旧 `<720px` 塌成竖排规则。
+  - **分类下拉(新 `components/CatSelect.svelte`)**:一行触发「● 分类 ⌄」→ 点开带**色点**面板(常用置顶 + 当前高亮 + `＋自定义`);`TxSheet` 分类与来源都换成它(`CatPicker` 现未用)。
+  - **今日 vs 日均条(移植 iOS `todaySection`)**:`Dashboard` 加 `todaySpending`/`todayPct`/`todayDeltaText`;新块 today = 左今日¥ · 进度条(sky 填充+末端标记,低于日均转 moss)· 右日均¥ · 下方「低于日均 N%·节省¥Y / 高于日均 N%·多花¥Y / 今日尚未消费」。作为**第 4 个可重排块**(`KNOWN_BLOCKS`+默认 order 加 `"today"`,老用户 `normalizeOrder` 自动追加)。
+  - **记账内联「自由影响」预览(新 `components/FreedomImpact.svelte`)**:`TxSheet` 新增态按当前金额用现成 `simOutcome` 实时算,**单行**「这笔 ≈ 削/多 N 天自由」(支出红/收入绿),金额 0 或 Δ<1 天自动隐藏,点「详情」展开三行。中性措辞、无开关。
+  - **模拟决策输入金额自动播**:`Dashboard` 演示 `$effect` 里,金额/模式变化后停 450ms 且有可播格差 → 自动 `playDemo()`(保留重播)。真机:输 ¥50000 自动播完、按钮显「重播」。
+  - **格子「今天」闪烁增强**(`FreedomGrid.svelte`):`.current` scale 1.02→1.2、白芯 + **金/蓝同色光晕**(`--halo`)双层辉光、周期 2.8→2.6s;reduced-motion 保底。仅 transform/box-shadow/filter。
+  - **资产三列小卡**(`Assets.svelte`):`.buckets` 2 列→`repeat(3,1fr)`,负债并入成第 3 列;内边距缩小 + `moneyFont` 26→21;窄屏折叠断点 420→340px。
+  - **类目「育儿」→「日用」**:`models.ts`(分类表+`CATEGORY_GROUPS`)、`categoryColors.ts`(色沿用、旧「育儿」键留兼容)、`annual.ts`(RIGID)。加别名 `育儿/日用品/生活用品/日杂→日用`,**删** `孩子/教育→育儿`;`store.initStore` 加 `migrateCategories()` 就地改已存「育儿」记录为「日用」。
+  - `svelte-check` 0 error;`npm test` 46/46。红线:包名与 localStorage 键不变、零新联网、动画仅 transform/opacity。
 - ✅ 合并去重修复 + 年报董事长口吻 + AI 余额 + B站推广物料(vc82/v2.59):三件事一起做。
   - **合并去重只对已存在记录(Task1,`store.svelte.ts` `mergeBackup`)**:旧逻辑把本次导入的新记录指纹也回填 `seen` → 同一批里"真·多笔完全相同的小额"(如同日两笔一样的外卖)会被误当重复折叠(2026 合并丢 3 笔/¥52 的根因)。改为:`existing` 只收当前 store 记录的指纹,过滤新记录时**不再回填**,于是本批内部相同条目全部保留;重复导入同一文件仍能跳过已存在的。首次导入(空账本)从此一笔不少。指纹仍是 `kind|YMD|amount|key|note`。
   - **年报「董事长」口吻 + 综合分析(Task2a,`prompts.ts` `annualMessages`)**:三档语气(正向/谨慎/求生)统一开头「**尊敬的董事长,您的公司本{年/季}……**」。新增入参 `assets`(净值/资产/现金/负债/被动%)+ `prev`(上一期营收/成本/结余,做**同比**)。体例改为**分条**(`· 综合经营 / · 同比往期 / · 亮点表扬 / · 改进建议`),**先真诚表扬再克制建议**、控篇幅(≤~320 字)。cacheKey 升为 `annual2:` 前缀并纳入资产+同比签名(旧缓存自动重生成新格式)。`History.svelte` 加**不受 Lv5 门控的 `aiPrevReport`**(专供 AI 同比)并把 `vm` 资产 + prev 传入 `letterMsgs`。真机验证 2025 报告:开头称呼✓、四条分条✓、引用净值20万/被动31%/较去年+2.5万/储蓄率+4个百分点/恩格尔16%/应急储备建议——全达标。

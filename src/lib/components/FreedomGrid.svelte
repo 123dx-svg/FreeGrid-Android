@@ -40,34 +40,44 @@
   .cell.blue {
     background: var(--asset-blue);
   }
-  /* 当前格:呼吸动画(scale + 微辉光脉动),移植 iOS LifeGrid 呼吸格。
-     纯 CSS keyframes —— 不依赖 JS,不会像 iOS repeatForever 那样冻结。
-     ⚠️ 对齐 iOS:不靠 brightness 把格子刷白(iOS 是固定浅色调 + 紧凑白辉光,无亮度倍增)。
-     旧版 brightness(1.75) + 14px/4px 宽白阴影会让峰值逼近全白 → 砍掉 bloom:
-     亮度峰值降到 1.1、白阴影收紧到 3→7px 半径 + 低透明度,scale 保留,呼吸不刺眼。 */
+  /* 当前格「今天」:增强呼吸(更大 scale + 白芯 + 金/蓝同色光晕双层辉光)。
+     纯 CSS keyframes,只动 transform / box-shadow / filter,不依赖 JS。
+     金格用金色光晕、蓝格用蓝色光晕(--halo),让"今天"更醒目、有星光感。 */
   .cell.current {
     position: relative;
     z-index: 1;
-    animation: breathe 2.8s ease-in-out infinite;
+    animation: breathe 2.6s ease-in-out infinite;
+  }
+  .cell.gold.current {
+    --halo: 245, 196, 81;
+  }
+  .cell.blue.current {
+    --halo: 130, 170, 255;
   }
   @keyframes breathe {
     0%,
     100% {
-      filter: brightness(1);
-      transform: scale(1.02);
-      box-shadow: 0 0 3px 0 rgba(255, 255, 255, 0.18);
+      filter: brightness(1.02);
+      transform: scale(1.04);
+      box-shadow:
+        0 0 4px 0 rgba(255, 255, 255, 0.25),
+        0 0 8px 1px rgba(var(--halo, 255, 255, 255), 0.28);
     }
     50% {
-      filter: brightness(1.1);
-      transform: scale(1.12);
-      box-shadow: 0 0 7px 1px rgba(255, 255, 255, 0.4);
+      filter: brightness(1.18);
+      transform: scale(1.2);
+      box-shadow:
+        0 0 8px 1px rgba(255, 255, 255, 0.55),
+        0 0 16px 4px rgba(var(--halo, 255, 255, 255), 0.6);
     }
   }
   @media (prefers-reduced-motion: reduce) {
     .cell.current {
       animation: none;
-      filter: brightness(1.08);
-      box-shadow: 0 0 6px 1px rgba(255, 255, 255, 0.32);
+      filter: brightness(1.1);
+      box-shadow:
+        0 0 6px 1px rgba(255, 255, 255, 0.35),
+        0 0 12px 2px rgba(var(--halo, 255, 255, 255), 0.4);
     }
   }
 </style>

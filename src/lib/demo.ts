@@ -96,6 +96,9 @@ export function makeDemoData(now: Date = new Date()): DemoData {
   const assets: UserAssets = {
     lockedAssets: 3300,
     cash: 2231,
+    liabilities: 0,
+    assetItems: [{ id: "demo-a1", type: "定期", name: "", amount: 3300, rate: 2.5 }],
+    liabilityItems: [],
     updatedAt: new Date(now.getTime() - 3 * 3600 * 1000), // 3 小时前
     firstRecordDate,
   };

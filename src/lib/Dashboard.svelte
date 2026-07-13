@@ -137,11 +137,18 @@
 
   // 演示三态(idle/playing/done)+ 触发
   let demoPhase = $state<"idle" | "playing" | "done">("idle");
-  // 金额或模式一变 → 回到静止态,让用户重新观察这一笔(对齐 iOS .onChange)
+  let autoPlayTimer: ReturnType<typeof setTimeout> | undefined;
+  // 金额或模式一变 → 回到静止态;停止输入 ~450ms 后自动播一次(有可播的格差时)
   $effect(() => {
     void simAmount;
     void simMode;
     demoPhase = "idle";
+    if (autoPlayTimer) clearTimeout(autoPlayTimer);
+    if (simValid && simCellDelta > 0) {
+      autoPlayTimer = setTimeout(() => {
+        if (demoPhase === "idle") playDemo();
+      }, 450);
+    }
   });
   function playDemo() {
     demoPhase = "playing";
@@ -184,6 +191,30 @@
   const dailyStr = $derived(vm.dailyBurn.toFixed(1));
   const passiveStr = $derived(`${Math.round(vm.passiveRatio * 100)}%`);
 
+  // ── 今日 vs 日均(移植 iOS todaySection)──
+  const todaySpending = $derived.by(() => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const end = start + 86400000;
+    let sum = 0;
+    for (const e of store.expenses) {
+      const t = e.date.getTime();
+      if (t >= start && t < end) sum += e.amount;
+    }
+    return sum;
+  });
+  const todayPct = $derived(vm.dailyBurn > 0 ? Math.max(0.04, Math.min(1, todaySpending / vm.dailyBurn)) : 0);
+  const todayDeltaText = $derived.by(() => {
+    if (vm.dailyBurn === 0) return "等待日均数据,先记几笔";
+    if (todaySpending === 0) return "今日尚未消费 👍";
+    const diffPct = Math.round(Math.abs(1 - todaySpending / vm.dailyBurn) * 100);
+    if (todaySpending > vm.dailyBurn) {
+      return `高于日均 ${diffPct}% · 多花 ¥${(todaySpending - vm.dailyBurn).toFixed(1)}`;
+    }
+    return `低于日均 ${diffPct}% · 节省 ¥${(vm.dailyBurn - todaySpending).toFixed(1)}`;
+  });
+  const todayUnder = $derived(vm.dailyBurn > 0 && todaySpending <= vm.dailyBurn);
+
   // ── 财务状态:求生 / 临界 ──
   const isSurvival = $derived(vm.state === "survival");
   const isWarning = $derived(vm.state === "warning");
@@ -201,8 +232,8 @@
     return denom > 0 ? Math.min(1, gross / denom) : 1;
   });
 
-  // ── 仪表盘布局:hero 固定,下方 grid/stats/actions 可重排 ──
-  const KNOWN_BLOCKS = ["grid", "stats", "actions"];
+  // ── 仪表盘布局:hero 固定,下方 grid/stats/actions/today 可重排 ──
+  const KNOWN_BLOCKS = ["grid", "stats", "actions", "today"];
   function normalizeOrder(o: string[]): string[] {
     const seen = new Set<string>();
     const res = o.filter((x) => KNOWN_BLOCKS.includes(x) && !seen.has(x) && (seen.add(x), true));
@@ -222,9 +253,9 @@
   }
 
   const LAYOUT_PRESETS = [
-    { id: "default", label: "默认", order: ["grid", "stats", "actions"] },
-    { id: "data", label: "数据优先", order: ["stats", "grid", "actions"] },
-    { id: "quick", label: "记账优先", order: ["actions", "grid", "stats"] },
+    { id: "default", label: "默认", order: ["grid", "stats", "actions", "today"] },
+    { id: "data", label: "数据优先", order: ["stats", "grid", "today", "actions"] },
+    { id: "quick", label: "记账优先", order: ["actions", "grid", "stats", "today"] },
   ];
   function applyPreset(o: string[]) {
     settings.dashboardOrder = [...o];
@@ -435,11 +466,32 @@
           </div>
         </section>
       {:else if id === "actions"}
-        <!-- ───── Actions ───── -->
+        <!-- ───── Actions:记支出/记收入 一行 + 模拟一笔 单独一行(对齐 iOS)───── -->
         <section class="actions">
-          <button class="vbtn flame" onclick={() => (showExpense = true)}>− 记支出</button>
-          <button class="vbtn sky" onclick={() => (showIncome = true)}>+ 记收入</button>
-          <button class="vbtn ghost" onclick={() => (showSim = true)}>⚡ 模拟一笔 · 看决策影响 →</button>
+          <div class="act-pair">
+            <button class="vbtn flame" onclick={() => (showExpense = true)}>− 记支出</button>
+            <button class="vbtn sky" onclick={() => (showIncome = true)}>+ 记收入</button>
+          </div>
+          <button class="vbtn ghost act-sim" onclick={() => (showSim = true)}>⚡ 模拟一笔 · 看决策影响 →</button>
+        </section>
+      {:else if id === "today"}
+        <!-- ───── 今日 vs 日均(移植 iOS)───── -->
+        <section class="vault-card today" class:under={todayUnder}>
+          <div class="today-row">
+            <div class="today-side">
+              <div class="today-num num">¥{todaySpending.toFixed(1)}</div>
+              <span class="kicker">TODAY</span>
+            </div>
+            <div class="today-bar">
+              <div class="today-fill" style="width:{Math.round(todayPct * 100)}%"></div>
+              <div class="today-mark" style="left:{Math.round(todayPct * 100)}%"></div>
+            </div>
+            <div class="today-side right">
+              <div class="today-num num muted">¥{vm.dailyBurn.toFixed(1)}</div>
+              <span class="kicker">AVG</span>
+            </div>
+          </div>
+          <p class="today-delta" class:good={todayUnder && todaySpending > 0}>{todayDeltaText}</p>
         </section>
       {/if}
     </div>
@@ -1060,36 +1112,120 @@
 
   /* ── stats ── */
   .stats {
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-lg);
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--sp-md);
   }
   .stat {
     display: flex;
     flex-direction: column;
-    gap: var(--sp-sm);
-    padding: var(--sp-lg) var(--sp-xl);
+    gap: 6px;
+    padding: var(--sp-md);
+    min-width: 0;
   }
   .stat-num {
-    font-size: 40px;
+    font-size: 26px;
     font-weight: 200;
     line-height: 1;
     color: var(--ink);
+    white-space: nowrap;
   }
   .stat hr {
     margin: 2px 0;
-    width: 28px;
+    width: 22px;
   }
   .stat-sub {
-    font-size: 13px;
+    font-size: 12px;
     color: var(--ink-muted);
   }
 
   /* ── actions ── */
   .actions {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1.4fr;
+    display: flex;
+    flex-direction: column;
     gap: var(--sp-md);
+  }
+  .act-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--sp-md);
+  }
+  .act-sim {
+    width: 100%;
+  }
+
+  /* ── 今日 vs 日均 ── */
+  .today {
+    padding: var(--sp-lg) var(--sp-xl);
+  }
+  .today-row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-md);
+  }
+  .today-side {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 58px;
+  }
+  .today-side.right {
+    align-items: flex-end;
+  }
+  .today-num {
+    font-size: 22px;
+    font-weight: 200;
+    line-height: 1;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  .today-num.muted {
+    color: var(--ink-muted);
+  }
+  .today-bar {
+    position: relative;
+    flex: 1;
+    height: 10px;
+    display: flex;
+    align-items: center;
+  }
+  .today-bar::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--mist2);
+  }
+  .today-fill {
+    position: absolute;
+    left: 0;
+    height: 2px;
+    background: var(--sky);
+    transition: width 0.3s ease;
+  }
+  .today.under .today-fill {
+    background: var(--moss);
+  }
+  .today-mark {
+    position: absolute;
+    width: 1.5px;
+    height: 10px;
+    background: var(--sky-deep);
+    transform: translateX(-0.75px);
+    transition: left 0.3s ease;
+  }
+  .today.under .today-mark {
+    background: var(--moss);
+  }
+  .today-delta {
+    margin: var(--sp-md) 0 0;
+    text-align: center;
+    font-size: 13px;
+    color: var(--ink-muted);
+  }
+  .today-delta.good {
+    color: var(--moss);
   }
   .vbtn {
     font-family: var(--font-rounded);
@@ -1374,9 +1510,6 @@
     }
     .hero-side {
       align-items: flex-start;
-    }
-    .actions {
-      grid-template-columns: 1fr;
     }
     .hero-number {
       font-size: 100px;

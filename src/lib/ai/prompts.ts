@@ -81,7 +81,15 @@ export interface AnnualPromptInput {
   settled?: boolean; // 该周期是否已结束(未结束 → 中期解读)
   liveState?: "free" | "normal" | "warning" | "survival"; // 当前实时财务态(作背景,让展望呼应现实)
   profile?: string; // 可选:用户个人背景摘要(城市/家庭/赡养抚养等,opt-in 才传),用于贴合国情个性化
-  assets?: { netWorth: number; lockedAssets: number; cash: number; liabilities: number; passivePct: number }; // 当前资产快照(综合分析用)
+  assets?: {
+    netWorth: number;
+    lockedAssets: number;
+    cash: number;
+    liabilities: number;
+    passivePct: number;
+    allocation?: { type: string; pct: number; rate?: number }[]; // 资产配置(按类型占比 + 年化收益率)
+    debts?: { type: string; amount: number; rate: number }[]; // 负债清单(含年化利率)
+  }; // 当前资产快照(综合分析用)
   prev?: { label: string; income: number; expense: number; net: number } | null; // 往期同比(上一年度/季度)
 }
 
@@ -152,9 +160,23 @@ export function annualMessages(input: AnnualPromptInput): { messages: ChatMessag
   const assetLine = a
     ? `当前资产:净值 ¥${Math.round(a.netWorth)}(资产 ¥${Math.round(a.lockedAssets)} + 现金 ¥${Math.round(a.cash)} − 负债 ¥${Math.round(a.liabilities)});被动收入覆盖日常 ${a.passivePct}%`
     : `被动收入覆盖日常 ${input.passivePct}%`;
+  const allocLine =
+    a?.allocation && a.allocation.length
+      ? `资产配置:${a.allocation.map((x) => `${x.type} ${x.pct}%${x.rate ? `(年化${x.rate}%)` : ""}`).join("、")}`
+      : "";
+  const debtLine =
+    a?.debts && a.debts.length
+      ? `负债清单:${a.debts.map((d) => `${d.type} ¥${Math.round(d.amount)}${d.rate > 0 ? ` @年化${d.rate}%` : ""}`).join("、")}`
+      : "";
   const prevLine = input.prev
     ? `往期同比(上一${period} ${input.prev.label}):收入 ¥${Math.round(input.prev.income)}、支出 ¥${Math.round(input.prev.expense)}、结余 ¥${Math.round(input.prev.net)}`
     : "往期同比:暂无上一期数据(首期,不必强行同比)";
+
+  // 有配置/负债明细 → 提示 AI 顺带点评资产配置(集中度/流动性)与高息负债优先偿还
+  if (allocLine || debtLine) {
+    sys +=
+      "\n用户提供了资产配置与负债明细:可在要点里顺带点评①资产配置是否过度集中/流动性是否够(若给了各类年化收益率,可点评配置效率、低收益占比是否过高);②若有负债,优先建议先还年化利率最高的那笔(高息负债雪崩法),低息长期负债(如房贷)不必急于提前还。";
+  }
 
   const user =
     [
@@ -163,14 +185,20 @@ export function annualMessages(input: AnnualPromptInput): { messages: ChatMessag
       `主要支出:${cats || "暂无"}`,
       `经营健康分 ${input.healthScore}/100(评级 ${input.rating}),自由天数 ${freedom}`,
       assetLine,
+      allocLine,
+      debtLine,
       prevLine,
-    ].join("\n") +
+    ]
+      .filter(Boolean)
+      .join("\n") +
     liveBg +
     (input.profile ? `\n个人背景:${input.profile}` : "");
 
-  const assetSig = a ? `${Math.round(a.netWorth / 1000)}-${a.passivePct}` : "x";
+  const allocSig = a?.allocation?.length ? a.allocation.map((x) => `${x.type}${x.pct}-${x.rate ?? 0}`).join(",") : "x";
+  const debtSig = a?.debts?.length ? a.debts.map((d) => `${d.type}${Math.round(d.amount / 1000)}@${d.rate}`).join(",") : "x";
+  const assetSig = a ? `${Math.round(a.netWorth / 1000)}-${a.passivePct}-${allocSig}-${debtSig}` : "x";
   const prevSig = input.prev ? `${Math.round(input.prev.net / 1000)}` : "x";
-  const cacheKey = `annual2:${input.yearLabel}:${Math.round(input.income)}:${Math.round(input.expense)}:${input.healthScore}:${tone}:${input.liveState ?? "x"}:${assetSig}:${prevSig}:${input.profile ? shortHash(input.profile) : "x"}`;
+  const cacheKey = `annual2:${input.yearLabel}:${Math.round(input.income)}:${Math.round(input.expense)}:${input.healthScore}:${tone}:${input.liveState ?? "x"}:${shortHash(assetSig)}:${prevSig}:${input.profile ? shortHash(input.profile) : "x"}`;
   return { messages: [{ role: "system", content: sys }, { role: "user", content: user }], cacheKey };
 }
 

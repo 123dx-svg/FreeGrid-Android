@@ -59,7 +59,7 @@ function defaults(): Settings {
     },
     customExpenseCategories: [],
     customIncomeSources: [],
-    dashboardOrder: ["grid", "stats", "actions"],
+    dashboardOrder: ["grid", "stats", "actions", "today"],
     skin: "",
     title: "",
     txTemplates: [],
