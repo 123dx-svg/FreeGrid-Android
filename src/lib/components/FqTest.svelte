@@ -10,17 +10,24 @@
     composeResult,
     saveFqResult,
     loadFqResult,
+    saveFqProgress,
+    loadFqProgress,
+    clearFqProgress,
     familyOf,
     type FqStored,
     type FqQuestion,
+    type FqProgress,
   } from "../fq-test";
   import { Capacitor } from "@capacitor/core";
   import { Share } from "@capacitor/share";
   import { renderPersonalityPng, sharePngDataUrl } from "../fq-share";
   import { markBadgeEvent } from "../achievements.svelte";
   import { pushOverlay, popOverlay } from "../overlay";
+  import { aiReady, aiConfig, cacheGet, cacheSet } from "../ai/config.svelte";
+  import { chat, fmtCost } from "../ai/llm";
+  import { fqMessages, parseFqInterpretation, type FqInterpretation } from "../ai/prompts";
 
-  let { open = false, startFresh = false, onClose }: { open?: boolean; startFresh?: boolean; onClose?: () => void } = $props();
+  let { open = false, startFresh = false, resume = false, onClose }: { open?: boolean; startFresh?: boolean; resume?: boolean; onClose?: () => void } = $props();
 
   // 真实记账指标(用于财商分并入,随 store 实时变)
   const vm = $derived(deriveDashboard(store));
@@ -52,30 +59,76 @@
     开: "开源", 省: "节流", 进: "进取", 稳: "稳健", 即: "即时", 远: "远见", 感: "随心", 研: "精算",
   };
 
-  // 打开时:有存档→看结果;否则→介绍。startFresh 强制重测。
+  // 打开时:只在「关→开」的那一次决定进入哪个阶段(用 prevOpen 守卫,避免 effect 反复重跑打断关闭)。
+  //  · startFresh(点“重新测试/开始测试”)→ 全新一套。
+  //  · resume(点“继续未完成的重测”)→ 优先续答已保存的进度;没有进度再退回结果/全新。
+  //  · 默认(点结果卡/入口)→ 有结果看结果;否则有进度续答;都没有则全新。
+  //    ——「结果优先」只在默认路径;in-progress 的重测通过独立的 resume 入口保证可续答、不丢答题进度。
+  let prevOpen = false;
   $effect(() => {
-    if (!open) return;
-    if (startFresh) {
-      beginQuiz();
-    } else {
-      const s = loadFqResult();
-      if (s) {
-        stored = s;
-        flipped = false;
-        stage = "result";
+    const isOpen = open;
+    if (isOpen && !prevOpen) {
+      if (startFresh) {
+        startFreshQuiz();
+      } else if (resume) {
+        const p = loadFqProgress();
+        if (p) {
+          resumeQuiz(p);
+        } else {
+          const s = loadFqResult();
+          if (s) {
+            stored = s;
+            flipped = false;
+            stage = "result";
+          } else {
+            startFreshQuiz();
+          }
+        }
       } else {
-        stage = "intro";
+        const s = loadFqResult();
+        if (s) {
+          stored = s;
+          flipped = false;
+          stage = "result";
+        } else {
+          const p = loadFqProgress();
+          if (p) resumeQuiz(p);
+          else startFreshQuiz();
+        }
       }
     }
+    prevOpen = isOpen;
   });
 
-  function beginQuiz() {
+  function startFreshQuiz() {
+    clearFqProgress();
     quizQuestions = sampleQuestions(QUIZ_LEN);
     answers = new Array(quizQuestions.length).fill(-1);
     current = 0;
     locked = false;
     flipped = false;
     stage = "quiz";
+  }
+
+  function resumeQuiz(p: FqProgress) {
+    quizQuestions = p.questions;
+    answers = p.answers.slice();
+    current = Math.min(Math.max(0, p.current), p.questions.length - 1);
+    locked = false;
+    flipped = false;
+    stage = "quiz";
+  }
+
+  function beginQuiz() {
+    startFreshQuiz();
+  }
+
+  // 中途退出:保留本次抽到的题目 + 已答进度,下次续答
+  function requestClose() {
+    if (stage === "quiz" && quizQuestions.length) {
+      saveFqProgress({ questions: quizQuestions, answers, current, date: new Date().toISOString() });
+    }
+    onClose?.();
   }
 
   function choose(idx: number) {
@@ -100,6 +153,7 @@
   }
 
   function finish() {
+    clearFqProgress(); // 答完 → 清除未完成进度
     const r = buildResult(answers, quizQuestions, metrics);
     const s: FqStored = { code: r.code, name: r.name, q: r.q, leans: r.axes.map((a) => ({ key: a.key, pole: a.pole, leanPct: a.leanPct })), date: r.date };
     saveFqResult(s);
@@ -173,12 +227,70 @@
   }
 
   const pct = (x: number) => `${Math.round(x * 100)}%`;
+
+  // ── AI 深度解读(可选;仅在开启 AI 且填了密钥时出现)──
+  let aiLoading = $state(false);
+  let aiErr = $state("");
+  let aiData = $state<FqInterpretation | null>(null);
+  let aiCost = $state("");
+  let lastAiCode = "";
+  // 人格代号变化(重测/切换结果)→ 清空上次解读
+  $effect(() => {
+    const c = result?.code ?? "";
+    if (c !== lastAiCode) {
+      lastAiCode = c;
+      aiData = null;
+      aiErr = "";
+      aiCost = "";
+    }
+  });
+
+  async function genAi(force: boolean) {
+    if (!result || aiLoading) return;
+    const withReal = aiConfig.sendRealMetrics && metrics.hasData;
+    const m = withReal
+      ? { marginPct: Math.round(metrics.margin * 100), passivePct: Math.round(Math.min(metrics.fiProgress, 9.99) * 100) }
+      : null;
+    const { messages, cacheKey } = fqMessages({
+      name: result.name,
+      code: result.code,
+      axes: result.axes.map((a) => ({ label: a.label, poleChar: a.poleChar, otherChar: a.otherChar, leanPct: a.leanPct })),
+      metrics: m,
+    });
+    aiErr = "";
+    if (!force) {
+      const cached = cacheGet(cacheKey);
+      if (cached) {
+        const p = parseFqInterpretation(cached);
+        if (p) {
+          aiData = p;
+          aiCost = "";
+          return;
+        }
+      }
+    }
+    aiLoading = true;
+    const r = await chat({ messages, json: true, maxTokens: 520, temperature: 0.85 });
+    aiLoading = false;
+    if (!r.ok || !r.content) {
+      aiErr = r.error ?? "生成失败";
+      return;
+    }
+    const p = parseFqInterpretation(r.content);
+    if (!p) {
+      aiErr = "AI 返回格式异常,可重试";
+      return;
+    }
+    cacheSet(cacheKey, r.content);
+    aiData = p;
+    aiCost = fmtCost(r.usage);
+  }
 </script>
 
 <svelte:window onkeydown={onKey} />
 
 {#if stage !== "result"}
-  <Sheet {open} title="财商人格测试" wide {onClose}>
+  <Sheet {open} title="财商人格测试" wide onClose={requestClose}>
     {#if stage === "intro"}
       <div class="fq-intro">
         <div class="fq-intro-badge">
@@ -279,6 +391,31 @@
               <p class="fq-li">· {result.tip}</p>
             </div>
           </div>
+
+          {#if aiReady("fq")}
+            <div class="fq-ai">
+              {#if aiData}
+                <p class="fq-ai-cap">✨ AI 深度解读</p>
+                <p class="fq-ai-sum">{aiData.summary}</p>
+                {#if aiData.strengths.length}
+                  <div class="fq-sec"><p class="fq-sec-h">AI · 优势</p>{#each aiData.strengths as s (s)}<p class="fq-li">· {s}</p>{/each}</div>
+                {/if}
+                {#if aiData.blindspots.length}
+                  <div class="fq-sec"><p class="fq-sec-h">AI · 盲点</p>{#each aiData.blindspots as s (s)}<p class="fq-li">· {s}</p>{/each}</div>
+                {/if}
+                {#if aiData.advice.length}
+                  <div class="fq-sec"><p class="fq-sec-h">AI · 建议</p>{#each aiData.advice as s (s)}<p class="fq-li">· {s}</p>{/each}</div>
+                {/if}
+                <div class="fq-ai-foot">
+                  {#if aiCost}<span class="fq-ai-cost">{aiCost}</span>{/if}
+                  <button class="fq-ai-regen" onclick={() => genAi(true)} disabled={aiLoading}>{aiLoading ? "生成中…" : "重新生成"}</button>
+                </div>
+              {:else}
+                <button class="fq-ai-btn" onclick={() => genAi(false)} disabled={aiLoading}>{aiLoading ? "AI 解读中…" : "✨ AI 深度解读"}</button>
+                {#if aiErr}<p class="fq-ai-err">{aiErr}</p>{/if}
+              {/if}
+            </div>
+          {/if}
 
           <div class="fq-actions">
             <button class="fq-btn" onclick={retest}>重新测试</button>
@@ -672,6 +809,69 @@
     width: 100%;
     margin-top: auto;
     padding-top: var(--sp-sm);
+  }
+
+  /* ── AI 深度解读 ── */
+  .fq-ai {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-sm);
+    padding-top: var(--sp-sm);
+    margin-top: 2px;
+    border-top: 1px dashed color-mix(in srgb, var(--fam) 40%, var(--hairline));
+  }
+  .fq-ai-cap {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--famd);
+    margin: 0;
+  }
+  .fq-ai-sum {
+    font-size: 13.5px;
+    line-height: 1.6;
+    color: var(--ink);
+    margin: 0;
+  }
+  .fq-ai-btn {
+    align-self: stretch;
+    padding: 11px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--famd, var(--sky-deep)) 55%, transparent);
+    background: color-mix(in srgb, var(--fam, var(--sky)) 12%, transparent);
+    color: var(--famd, var(--sky-deep));
+    font-family: var(--font-rounded);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .fq-ai-btn:disabled {
+    opacity: 0.6;
+  }
+  .fq-ai-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-md);
+    margin-top: 2px;
+  }
+  .fq-ai-cost {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--ink-ghost);
+  }
+  .fq-ai-regen {
+    margin-left: auto;
+    border: 0;
+    background: transparent;
+    color: var(--famd);
+    font-size: 12.5px;
+    cursor: pointer;
+    padding: 2px 0;
+  }
+  .fq-ai-err {
+    font-size: 12px;
+    color: var(--flame);
+    margin: 0;
   }
   .fq-btn {
     flex: 1;

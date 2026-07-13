@@ -1,6 +1,8 @@
 <script lang="ts">
   import Sheet from "./Sheet.svelte";
   import DataTools from "./DataTools.svelte";
+  import AiSettings from "./AiSettings.svelte";
+  import { aiConfig } from "../ai/config.svelte";
   import { store } from "../store.svelte";
   import { deriveDashboard } from "../derive";
   import { loadFqResult } from "../fq-test";
@@ -9,6 +11,7 @@
   import {
     settings,
     removeCustom,
+    removeTemplate,
     hasProfile,
     currentAge,
     yearsToRetire,
@@ -16,11 +19,15 @@
     fiTargetNetWorth,
   } from "../settings.svelte";
   import { colorForName } from "../categoryColors";
+  import { SKINS, TITLES, skinById } from "../appearance";
+  import { reached } from "../level.svelte";
+  import { isUnlocked } from "../achievements.svelte";
 
   let { open = false, onClose }: { open?: boolean; onClose?: () => void } = $props();
 
   // 子页开合(抽屉式:点顶层行滑入)
-  let view = $state({ profile: false, personal: false, cats: false, data: false });
+  let view = $state({ profile: false, personal: false, cats: false, data: false, ai: false, appearance: false });
+  const skinName = $derived(skinById(settings.skin).name);
 
   const appVersion = __APP_VERSION__;
   let nativeVer = $state("");
@@ -69,6 +76,8 @@
 
   const themeLabel = $derived(THEME.find((t) => t.v === settings.theme)?.l ?? "跟随系统");
   const customCount = $derived(settings.customExpenseCategories.length + settings.customIncomeSources.length);
+  const manageCount = $derived(customCount + settings.txTemplates.length);
+  const yuanTpl = (n: number) => "¥" + Math.round(n).toLocaleString("en-US");
 
   const nowYear = new Date().getFullYear();
   const yuan0 = (n: number) => "¥" + Math.round(n).toLocaleString("en-US");
@@ -103,11 +112,18 @@
       <span class="srow-chev">›</span>
     </button>
 
-    {#if customCount > 0}
+    <button class="srow" onclick={() => (view.appearance = true)}>
+      <svg class="srow-ic" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18c1 0 1.6-.8 1.6-1.6 0-.9-.7-1.4-.7-2.2 0-.7.6-1.2 1.4-1.2H16a5 5 0 0 0 5-5c0-4.4-4-8-9-8Z" /><circle cx="7.5" cy="11" r="1" /><circle cx="12" cy="7.5" r="1" /><circle cx="16.5" cy="11" r="1" /></svg>
+      <span class="srow-title">外观 · 皮肤与称号</span>
+      <span class="srow-val">{skinName}</span>
+      <span class="srow-chev">›</span>
+    </button>
+
+    {#if manageCount > 0}
       <button class="srow" onclick={() => (view.cats = true)}>
         <svg class="srow-ic" viewBox="0 0 24 24"><path d="M3 3h8l10 10-8 8L3 11z" /><circle cx="7.5" cy="7.5" r="1.4" /></svg>
-        <span class="srow-title">分类管理</span>
-        <span class="srow-val">{customCount} 项</span>
+        <span class="srow-title">分类 · 常用管理</span>
+        <span class="srow-val">{manageCount} 项</span>
         <span class="srow-chev">›</span>
       </button>
     {/if}
@@ -115,6 +131,13 @@
     <button class="srow" onclick={() => (view.data = true)}>
       <svg class="srow-ic" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="3" /><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6" /><path d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3" /></svg>
       <span class="srow-title">数据 · 备份与导入</span>
+      <span class="srow-chev">›</span>
+    </button>
+
+    <button class="srow" onclick={() => (view.ai = true)}>
+      <svg class="srow-ic" viewBox="0 0 24 24"><path d="M5 5h14v10H9l-4 4z" /><path d="M9 9h6M9 12h4" /></svg>
+      <span class="srow-title">AI 助手 · 实验</span>
+      <span class="srow-val">{aiConfig.enabled ? "已启用" : "关闭"}</span>
       <span class="srow-chev">›</span>
     </button>
 
@@ -136,7 +159,7 @@
       {/if}
     {/if}
 
-    <p class="setlist-foot">纯本地 · 零网络 · 数据只存本机</p>
+    <p class="setlist-foot">{aiConfig.enabled ? "本地优先 · AI 由你开启并自带密钥" : "纯本地 · 零网络 · 数据只存本机"}</p>
   </div>
 </Sheet>
 
@@ -266,10 +289,55 @@
   </div>
 </Sheet>
 
-<!-- ════════ 子页:分类管理 ════════ -->
-{#if customCount > 0}
-  <Sheet open={view.cats} title="分类管理" onClose={() => (view.cats = false)}>
+<!-- ════════ 子页:外观 · 皮肤与称号 ════════ -->
+<Sheet open={view.appearance} title="外观 · 皮肤与称号" onClose={() => (view.appearance = false)}>
+  <div class="set">
+    <div class="set-block">
+      <span class="set-label">皮肤(按经营等级解锁)</span>
+      <div class="set-chips">
+        {#each SKINS as s (s.id)}
+          {@const ok = reached(s.level)}
+          <button class="skin-chip" class:on={settings.skin === s.id} disabled={!ok} onclick={() => (settings.skin = s.id)}>
+            <span class="skin-dot" style="background:{s.swatch}"></span>
+            {s.name}
+            {#if !ok}<span class="lock-tag">Lv.{s.level} 解锁</span>{/if}
+          </button>
+        {/each}
+      </div>
+      <p class="set-note">皮肤只改强调色,深 / 浅主题不变。</p>
+    </div>
+    <div class="set-block">
+      <span class="set-label">称号(按徽章解锁)</span>
+      <div class="set-chips">
+        {#each TITLES as t (t.id)}
+          {@const ok = t.badge === "" || isUnlocked(t.badge)}
+          <button class="set-chip title-chip" class:on={settings.title === t.id} disabled={!ok} onclick={() => (settings.title = t.id)}>
+            {t.name}{#if !ok}<span class="lock-tag">{t.hint}</span>{/if}
+          </button>
+        {/each}
+      </div>
+      <p class="set-note">称号显示在经营年报的等级卡上。</p>
+    </div>
+  </div>
+</Sheet>
+
+<!-- ════════ 子页:分类 · 常用管理 ════════ -->
+{#if manageCount > 0}
+  <Sheet open={view.cats} title="分类 · 常用管理" onClose={() => (view.cats = false)}>
     <div class="set">
+      {#if settings.txTemplates.length}
+        <div class="set-block">
+          <span class="set-label">常用记账模板</span>
+          <div class="set-chips">
+            {#each settings.txTemplates as t (t.id)}
+              <span class="cm-tag">
+                <span class="cm-dot" style="background:{colorForName(t.name)}"></span>{t.name}{#if t.amount != null}<span class="cm-amt num"> {yuanTpl(t.amount)}</span>{/if}
+                <button class="cm-x" onclick={() => removeTemplate(t.id)} aria-label="删除">✕</button>
+              </span>
+            {/each}
+          </div>
+        </div>
+      {/if}
       {#if settings.customExpenseCategories.length}
         <div class="set-block">
           <span class="set-label">自定义支出分类</span>
@@ -296,7 +364,7 @@
           </div>
         </div>
       {/if}
-      <p class="set-note">删除自定义分类不会影响已记录的流水,只是不再出现在快捷选项里。</p>
+      <p class="set-note">常用模板在记账面板顶部一键预填;删除自定义分类不影响已记录的流水,只是不再出现在快捷选项里。</p>
     </div>
   </Sheet>
 {/if}
@@ -305,6 +373,9 @@
 <Sheet open={view.data} title="数据 · 备份与导入" wide onClose={() => (view.data = false)}>
   <DataTools />
 </Sheet>
+
+<!-- ════════ 子页:AI 助手 ════════ -->
+<AiSettings open={view.ai} onClose={() => (view.ai = false)} />
 
 <style>
   /* ── 顶层设置列表 ── */
@@ -505,6 +576,45 @@
     color: var(--sky-deep);
     font-weight: 600;
   }
+  .skin-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13px;
+    padding: 7px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--hairline);
+    background: var(--mist2);
+    color: var(--ink-muted);
+    cursor: pointer;
+  }
+  .skin-chip.on {
+    border-color: var(--sky);
+    color: var(--sky-deep);
+    font-weight: 600;
+    background: color-mix(in srgb, var(--sky) 14%, transparent);
+  }
+  .skin-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 999px;
+    flex: 0 0 12px;
+    border: 1px solid color-mix(in srgb, #000 15%, transparent);
+  }
+  .set-chip:disabled,
+  .skin-chip:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .lock-tag {
+    font-size: 10px;
+    margin-left: 5px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--ink) 10%, transparent);
+    color: var(--ink-faint);
+    font-weight: 400;
+  }
   .cm-tag {
     display: inline-flex;
     align-items: center;
@@ -521,6 +631,10 @@
     height: 9px;
     border-radius: 3px;
     flex: 0 0 9px;
+  }
+  .cm-amt {
+    color: var(--ink-faint);
+    font-size: 12px;
   }
   .cm-x {
     border: 0;

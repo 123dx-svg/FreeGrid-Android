@@ -74,6 +74,28 @@ export function freedomDays(netWorthVal: number, dailyBurnVal: number, dailyPass
   return Math.max(0, netWorthVal) / netBurn;
 }
 
+// ===== 财务状态(驱动"求生模式"的一根轴) =====
+
+/** 临界阈值:自由天数 < 此值(且 > 0)进入「临界」预警。 */
+export const WARN_DAYS = 14;
+
+export type FinancialState = "free" | "normal" | "warning" | "survival";
+
+/**
+ * 财务状态四档:
+ *  · free     被动覆盖(自由天数 = ∞)→ 财富自由
+ *  · survival 净值 ≤ 0 → 自由天数见底(0),进入求生模式
+ *  · warning  0 < 自由天数 < WARN_DAYS → 快见底,临界预警
+ *  · normal   自由天数 ≥ WARN_DAYS
+ * 注:freedomDays 已把净值 max(0,·) 兜底,所以 === 0 恒等价于「净值 ≤ 0 且有净消耗」。
+ */
+export function financialState(netWorthVal: number, freedomDaysVal: number): FinancialState {
+  if (!Number.isFinite(freedomDaysVal)) return "free";
+  if (freedomDaysVal <= 0 || netWorthVal <= 0) return "survival";
+  if (freedomDaysVal < WARN_DAYS) return "warning";
+  return "normal";
+}
+
 /**
  * 自由天数格式化:三档无后缀(单位由 hero KickerLabel 承载)。
  * < 365 天 → 整数天 "127";365–3649 → 整数月 days/30.44;≥ 3650 → 1 位小数年 days/365.25;∞/NaN → "∞"。

@@ -5,6 +5,7 @@
   // 交互:调拨写库、导出 CSV/JSON、从 JSON 导入、清空 —— 均落真实 store 操作。
   import { deriveDashboard } from "./derive";
   import Sheet from "./components/Sheet.svelte";
+  import InvestSimSheet from "./components/SimSheet.svelte";
   import {
     store,
     transfer,
@@ -14,8 +15,19 @@
   } from "./store.svelte";
 
   const vm = $derived(deriveDashboard(store));
+  // 模拟投资:日均净烧 = 日均消费 − 日均被动(≤0 表示被动已覆盖)
+  const dailyNetBurn = $derived(Math.max(0, vm.dailyBurn - vm.dailyPassive));
+  let showInvest = $state(false);
 
   const yuan = (n: number) => "¥" + Math.round(n).toLocaleString("en-US");
+  // 按金额字符串长度自适应字号,防大额(如 ¥12,345,678)溢出面板
+  function moneyFont(v: number, base: number, extra = 0): number {
+    const len = ("¥" + Math.round(Math.abs(v)).toLocaleString("en-US")).length + extra;
+    if (len <= 8) return base;
+    if (len <= 11) return Math.round(base * 0.78);
+    if (len <= 14) return Math.round(base * 0.6);
+    return Math.round(base * 0.5);
+  }
 
   // 上次更新相对时间(英文),随 store.assets.updatedAt 实时变化
   const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
@@ -131,7 +143,7 @@
   <!-- ───── 净值 ───── -->
       <section class="vault-card hi networth">
         <span class="kicker">NET WORTH · 净值</span>
-        <div class="nw-number num">{yuan(vm.netWorth)}</div>
+        <div class="nw-number num" style="font-size:{moneyFont(vm.netWorth, 56)}px">{yuan(vm.netWorth)}</div>
         <p class="nw-caption">上次更新 · {updatedAgo}</p>
       </section>
 
@@ -151,7 +163,7 @@
               </svg>
             </button>
           </div>
-          <div class="bucket-amount num">{yuan(vm.lockedAssets)}</div>
+          <div class="bucket-amount num" style="font-size:{moneyFont(vm.lockedAssets, 26)}px">{yuan(vm.lockedAssets)}</div>
         </section>
 
         <section class="vault-card bucket">
@@ -168,7 +180,7 @@
               </svg>
             </button>
           </div>
-          <div class="bucket-amount num">{yuan(vm.cash)}</div>
+          <div class="bucket-amount num" style="font-size:{moneyFont(vm.cash, 26)}px">{yuan(vm.cash)}</div>
         </section>
       </div>
 
@@ -187,7 +199,7 @@
             </svg>
           </button>
         </div>
-        <div class="bucket-amount num" class:neg={vm.liabilities > 0}>
+        <div class="bucket-amount num" class:neg={vm.liabilities > 0} style="font-size:{moneyFont(vm.liabilities, 22, 1)}px">
           {vm.liabilities > 0 ? "−" + yuan(vm.liabilities) : yuan(0)}
         </div>
       </section>
@@ -244,6 +256,9 @@
           {/each}
         {/if}
       </section>
+
+      <!-- ───── 模拟一笔投资(看清年化陷阱)───── -->
+      <button class="invest-btn" onclick={() => (showInvest = true)}>⚡ 模拟一笔 · 看清金融陷阱 →</button>
 
       <!-- ───── 调拨 ───── -->
       <section class="vault-card transfer">
@@ -375,7 +390,24 @@
   </Sheet>
 </div>
 
+<InvestSimSheet open={showInvest} {dailyNetBurn} onClose={() => (showInvest = false)} />
+
 <style>
+  .invest-btn {
+    width: 100%;
+    font-family: var(--font-rounded);
+    font-size: 14px;
+    padding: 13px 18px;
+    border-radius: 999px;
+    background: transparent;
+    border: 1px solid color-mix(in srgb, var(--income-gold) 45%, var(--hairline));
+    color: var(--income-gold);
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+  .invest-btn:hover {
+    background: color-mix(in srgb, var(--income-gold) 8%, transparent);
+  }
   .assets {
     display: flex;
     flex-direction: column;
@@ -406,6 +438,7 @@
     letter-spacing: -0.03em;
     color: var(--ink);
     margin: var(--sp-md) 0 0;
+    white-space: nowrap;
   }
   .nw-caption {
     font-size: 12px;
@@ -421,6 +454,8 @@
   }
   .bucket {
     padding: var(--sp-lg) var(--sp-xl);
+    min-width: 0;
+    overflow: hidden;
   }
   .bucket-head {
     display: flex;
@@ -478,6 +513,7 @@
     line-height: 1;
     color: var(--ink);
     margin-top: var(--sp-md);
+    white-space: nowrap;
   }
   .bucket-amount.neg {
     color: var(--flame);

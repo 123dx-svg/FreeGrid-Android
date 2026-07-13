@@ -43,6 +43,18 @@ public class FreedomWidgetProvider extends AppWidgetProvider {
         v.setTextViewText(R.id.widget_unit, p.getString("unit", ""));
         v.setTextViewText(R.id.widget_sub, p.getString("sub", "打开 App 记一笔"));
 
+        // 按财务状态给主数字上色:求生=ember 红 / 临界=amber 琥珀 / 财富自由=moss 绿 / 其余=默认白
+        String state = p.getString("state", "normal");
+        int accent;
+        switch (state) {
+            case "survival": accent = 0xFFF06E5A; break;
+            case "warning":  accent = 0xFFF0B95F; break;
+            case "inf":      accent = 0xFF8CD19E; break;
+            default:         accent = 0xFFF0F1F5; break;
+        }
+        v.setTextColor(R.id.widget_number, accent);
+
+
         // 点中部 = 打开 App;两个按钮 = 复用桌面快捷方式的深链直达记账
         v.setOnClickPendingIntent(R.id.widget_center, openApp(ctx, 0, null));
         v.setOnClickPendingIntent(R.id.widget_btn_expense, openApp(ctx, 1, "freegrid://record/expense"));

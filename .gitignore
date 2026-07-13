@@ -34,6 +34,10 @@ android/keystore.properties
 android/local.properties
 .agents/
 
-# 生成物:demo 备份数据(由 tools/gen-demo-backup.mjs 再生)
+# 代码图谱工具缓存(本地生成)
+.codegraph/
+
+# 生成物:demo / 波动测试 备份数据(由 tools/gen-*.mjs 再生)
 tools/freegrid-demo.json
+tools/freegrid-wavy.json
 

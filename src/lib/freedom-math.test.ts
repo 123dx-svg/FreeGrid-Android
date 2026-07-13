@@ -11,6 +11,8 @@ import {
   deltaSummary,
   depleteDate,
   daysBetween,
+  financialState,
+  WARN_DAYS,
 } from "./freedom-math";
 
 describe("基础计量", () => {
@@ -133,5 +135,24 @@ describe("见底日期", () => {
     const d = depleteDate(78, now);
     expect(d).not.toBeNull();
     expect(daysBetween(now, d!)).toBe(78);
+  });
+});
+
+describe("financialState 四档", () => {
+  it("∞(被动覆盖)→ free", () => {
+    expect(financialState(5000, Infinity)).toBe("free");
+    expect(financialState(-500, Infinity)).toBe("free"); // 被动全覆盖即便负净值也 free
+  });
+  it("净值≤0 / 自由天数=0 → survival", () => {
+    expect(financialState(0, 0)).toBe("survival");
+    expect(financialState(-469, 0)).toBe("survival");
+  });
+  it("0<天数<WARN_DAYS → warning", () => {
+    expect(financialState(500, 1)).toBe("warning");
+    expect(financialState(500, WARN_DAYS - 0.5)).toBe("warning");
+  });
+  it("天数≥WARN_DAYS → normal", () => {
+    expect(financialState(5000, WARN_DAYS)).toBe("normal");
+    expect(financialState(5000, 146)).toBe("normal");
   });
 });

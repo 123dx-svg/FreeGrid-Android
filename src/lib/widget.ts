@@ -36,6 +36,17 @@ export function updateFreedomWidget(vm: DashboardVM, hasData: boolean): void {
     payload = { state: "empty", kicker: "FREEDOM", number: "—", unit: "", sub: "打开 App 记一笔" };
   } else if (isInf) {
     payload = { state: "inf", kicker: "FREEDOM", number: "∞", unit: "", sub: "你已财富自由" };
+  } else if (vm.state === "survival") {
+    const num = vm.shortfall > 0 ? "¥" + Math.round(vm.shortfall).toLocaleString("en-US") : "见底";
+    payload = { state: "survival", kicker: "求生模式", number: num, unit: "", sub: "净值见底 · 先回正" };
+  } else if (vm.state === "warning") {
+    payload = {
+      state: "warning",
+      kicker: kickerFor(vm.unit),
+      number: vm.freedomDaysDisplay,
+      unit: freedomUnitLabel(vm.unit),
+      sub: `⚠ 只够撑 ${vm.freedomDaysDisplay} 天`,
+    };
   } else {
     payload = {
       state: "normal",

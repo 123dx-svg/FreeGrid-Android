@@ -25,6 +25,8 @@ export interface Achievement {
   hue: number; // 主色相(HSL,解锁后上色)
   test?: (a: AchInput) => boolean; // 数据型解锁条件
   event?: string; // 事件型(由 markBadgeEvent 解锁)
+  eventCount?: { event: string; count: number }; // 事件累计到一定次数解锁(如多次完成测试)
+  hidden?: boolean; // 隐藏成就:解锁前只显示「？？？」,达成即揭晓
 }
 
 // ── 徽章清单(~23 枚,分组里程碑,长期可追)──
@@ -58,6 +60,13 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: "fq", group: "探索", name: "认识自己", desc: "完成一次财商人格测试", icon: "🧭", hue: 20, event: "completed_fq" },
   { id: "assets", group: "探索", name: "资产在册", desc: "记录了可变现资产", icon: "🗂️", hue: 20, test: (a) => a.hasAssets },
   { id: "annual", group: "探索", name: "年度回望", desc: "查看过个人年报", icon: "📊", hue: 20, event: "viewed_annual" },
+  // 隐藏成就(达成前只显示「？？？」,靠坚持/探索/惊喜触发)
+  { id: "fq5", group: "隐藏成就", name: "反复横跳", desc: "累计完成 5 次财商测试", icon: "🔮", hue: 280, hidden: true, eventCount: { event: "completed_fq", count: 5 } },
+  { id: "fq15", group: "隐藏成就", name: "人格考古学家", desc: "累计完成 15 次财商测试", icon: "🧬", hue: 300, hidden: true, eventCount: { event: "completed_fq", count: 15 } },
+  { id: "report10", group: "隐藏成就", name: "年报钉子户", desc: "累计翻看 10 次个人年报", icon: "📈", hue: 190, hidden: true, eventCount: { event: "viewed_annual", count: 10 } },
+  { id: "save80", group: "隐藏成就", name: "省钱忍者", desc: "储蓄率一度冲到 80%", icon: "🥷", hue: 48, hidden: true, test: (a) => a.margin >= 0.8 && a.txCount > 0 },
+  { id: "nw500", group: "隐藏成就", name: "五百万", desc: "净值突破 500 万", icon: "🛥️", hue: 42, hidden: true, test: (a) => a.netWorth >= 5000000 },
+  { id: "backup", group: "隐藏成就", name: "有备无患", desc: "导出过一次数据备份", icon: "💾", hue: 160, hidden: true, event: "exported_backup" },
 ];
 
 export const ACH_GROUPS: string[] = [...new Set(ACHIEVEMENTS.map((a) => a.group))];

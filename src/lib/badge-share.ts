@@ -54,7 +54,7 @@ function badgeSVG(a: Achievement, unlockedAt: string | null): string {
     <rect x="${cx - 46}" y="794" width="92" height="5" rx="2.5" fill="${base}"/>
     <text x="${cx}" y="890" text-anchor="middle" font-family="${FONT}" font-size="34" fill="${MUTED}">${esc(a.desc)}</text>
     <text x="${cx}" y="985" text-anchor="middle" font-family="${FONT}" font-size="28" font-weight="600" fill="${deep}">${esc(dateLine)}</text>
-    <text x="${cx}" y="1250" text-anchor="middle" font-family="${FONT}" font-size="24" fill="${FAINT}">自由日记 · 通往财富自由之路</text>
+    <text x="${cx}" y="1250" text-anchor="middle" font-family="${FONT}" font-size="24" fill="${FAINT}">自由日记 · 经营人生,把花销换算成自由</text>
   </svg>`;
 }
 
@@ -77,14 +77,17 @@ function wallSVG(items: { a: Achievement; at: string | null }[], unlockedCount: 
       const x = padX + c * cellW + cellW / 2;
       const y = top + r * cellH;
       const on = !!it.at;
+      const secret = !!it.a.hidden && !on; // 隐藏成就未解锁:海报上也只显示「？？？」
+      const dispName = secret ? "？？？" : it.a.name;
+      const dispIcon = on ? it.a.icon : it.a.hidden ? "❓" : "🔒";
       const base = on ? `hsl(${it.a.hue} 62% 52%)` : "#C9C3B8";
       const soft = on ? `hsl(${it.a.hue} 60% 90%)` : "#EAE6DE";
       const deep = on ? `hsl(${it.a.hue} 55% 40%)` : "#B4ABA0";
       const nameColor = on ? INK : "#B4ABA0";
       return `<g>
         <circle cx="${x}" cy="${y + 92}" r="70" fill="${soft}" stroke="${deep}" stroke-width="4" opacity="${on ? 1 : 0.75}"/>
-        <text x="${x}" y="${y + 112}" text-anchor="middle" font-family="${EMOJI_FONT}" font-size="62" opacity="${on ? 1 : 0.5}">${on ? it.a.icon : "🔒"}</text>
-        <text x="${x}" y="${y + 200}" text-anchor="middle" font-family="${FONT}" font-size="27" font-weight="600" fill="${nameColor}">${esc(it.a.name)}</text>
+        <text x="${x}" y="${y + 112}" text-anchor="middle" font-family="${EMOJI_FONT}" font-size="62" opacity="${on ? 1 : 0.5}">${dispIcon}</text>
+        <text x="${x}" y="${y + 200}" text-anchor="middle" font-family="${FONT}" font-size="27" font-weight="600" fill="${nameColor}">${esc(dispName)}</text>
         <text x="${x}" y="${y + 234}" text-anchor="middle" font-family="${FONT}" font-size="20" fill="${on ? deep : "#C9C3B8"}">${on ? esc(fmtDate(it.at)) : "未解锁"}</text>
         <circle cx="${x}" cy="${y + 92}" r="70" fill="none" stroke="${base}" stroke-width="1.5" stroke-dasharray="3 8" opacity="${on ? 0.8 : 0}"/>
       </g>`;
@@ -96,7 +99,7 @@ function wallSVG(items: { a: Achievement; at: string | null }[], unlockedCount: 
     <text x="${cx}" y="110" text-anchor="middle" font-family="${FONT}" font-size="26" font-weight="600" letter-spacing="4" fill="${FAINT}">FREEGRID · 我的成就墙</text>
     <text x="${cx}" y="170" text-anchor="middle" font-family="${FONT}" font-size="54" font-weight="700" fill="${INK}">已点亮 ${unlockedCount} / ${total} 枚</text>
     ${cells}
-    <text x="${cx}" y="${H - 34}" text-anchor="middle" font-family="${FONT}" font-size="24" fill="${FAINT}">自由日记 · 通往财富自由之路</text>
+    <text x="${cx}" y="${H - 34}" text-anchor="middle" font-family="${FONT}" font-size="24" fill="${FAINT}">自由日记 · 经营人生,把花销换算成自由</text>
   </svg>`;
 }
 

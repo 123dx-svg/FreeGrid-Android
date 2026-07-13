@@ -658,16 +658,146 @@ const TYPE_TAG: Record<string, string> = {
   省稳即感: "钱够花就好,知足常乐", 省稳即研: "把小日子过成精算题", 省稳远感: "慢慢攒,稳稳的幸福", 省稳远研: "精打细算,守住每一分",
 };
 
-// ── 各维“极”的描述块(组合生成结果文案)──
-const POLE_TEXT: Record<string, { strength: string; blind: string; tip: string }> = {
-  开: { strength: "搞钱嗅觉敏锐,愿意主动开拓收入", blind: "容易摊子铺太大、精力分散", tip: "聚焦最赚钱的一两条线,别什么都想抓" },
-  省: { strength: "成本意识强,守得住钱包", blind: "可能省过头,错过该花的投资", tip: "在成长/健康上,该花的别抠" },
-  进: { strength: "敢于把握机会、承担风险", blind: "容易上头追高、忽视风险", tip: "永远只用‘输得起’的钱去冒险" },
-  稳: { strength: "风险意识好,本金守得稳", blind: "可能太保守,跑不赢通胀", tip: "留足安全垫后,拿一小部分去成长" },
-  即: { strength: "懂得享受当下、生活有滋味", blind: "即时消费多,攒钱慢", tip: "试试‘先存后花’,给未来留一笔" },
-  远: { strength: "长期规划强,延迟满足做得好", blind: "可能太克制,错过当下的快乐", tip: "给当下也留点预算,别只为未来活" },
-  感: { strength: "决策果断、行动力强", blind: "凭感觉容易踩坑、缺复盘", tip: "大额决定前,强制自己算一遍账" },
-  研: { strength: "理性、爱研究、决策有据", blind: "可能分析过度、迟迟不行动", tip: "想清楚就出手,别被分析瘫痪" },
+// ── 各维“极”的描述块(多变体,组合生成结果文案)──
+// 每极给多条更具体、更生活化的描述,composeResult 按 code+date 确定性挑选,
+// 使同一份结果稳定、不同人之间有差异(纯本地模板,零网络零 AI)。
+const POLE_TEXT: Record<string, { strengths: string[]; blinds: string[]; tips: string[] }> = {
+  开: {
+    strengths: [
+      "搞钱嗅觉敏锐,总能发现新的赚钱路子",
+      "不安于单一收入,愿意主动开拓、多条腿走路",
+      "对机会反应快,收入的天花板比别人高",
+    ],
+    blinds: [
+      "容易同时铺太多摊子,精力被摊薄",
+      "热衷开新线,却疏于把已有的一条做深做透",
+      "追着机会跑,现金流和风险容易被忽略",
+    ],
+    tips: [
+      "先把最赚钱的一两条线做深,再谈扩张",
+      "给每条副业设一个‘止损期’,不见效就砍掉",
+      "开源的同时,记得先给自己留一笔安全垫",
+    ],
+  },
+  省: {
+    strengths: [
+      "成本意识强,钱包守得住,很少乱花",
+      "精于算计性价比,同样的钱能过得更好",
+      "开销心里有数,财务状态稳,不容易翻车",
+    ],
+    blinds: [
+      "有时省过了头,该投资自己的钱也舍不得",
+      "太盯着省小钱,可能错过赚大钱的机会",
+      "把‘不花’当成唯一策略,收入增长被忽视了",
+    ],
+    tips: [
+      "在成长、健康、见识上,该花的别抠",
+      "省下来的钱要让它增值,别只躺在活期里",
+      "试着把一部分精力,从‘省’转到‘赚’上",
+    ],
+  },
+  进: {
+    strengths: [
+      "敢于把握机会、承担风险,不畏惧不确定",
+      "行动果决,该出手时不犹豫",
+      "对高回报机会有嗅觉,愿意为成长下注",
+    ],
+    blinds: [
+      "容易上头追高,在人人狂热时忘了风险",
+      "仓位常压得过重,一次误判就伤及本金",
+      "对‘可能亏多少’估计不足,常常没留退路",
+    ],
+    tips: [
+      "永远只用‘输得起’的钱去冒险",
+      "每次出手前,先想清楚最坏能亏多少",
+      "设好止盈止损线,到了就执行,别硬扛",
+    ],
+  },
+  稳: {
+    strengths: [
+      "风险意识好,本金守得稳,晚上睡得着",
+      "不追热点、不上头,能在狂热里保持冷静",
+      "有应急意识,遇到突发状况也不慌",
+    ],
+    blinds: [
+      "可能太保守,长期跑不赢通胀",
+      "机会来了也不敢上,常在观望中错过",
+      "钱过度堆在低收益的地方,增长太慢",
+    ],
+    tips: [
+      "留足安全垫后,拿一小部分去搏成长",
+      "把‘看不懂就不碰’升级成‘学懂了再上’",
+      "定一个能承受的波动范围,再适度进取",
+    ],
+  },
+  即: {
+    strengths: [
+      "懂得享受当下,生活有滋味、不亏待自己",
+      "对快乐很舍得投入,情绪价值拉满",
+      "想做的事说做就做,执行力强",
+    ],
+    blinds: [
+      "即时消费偏多,存钱和攒本金偏慢",
+      "容易被‘限时、秒杀、分期’这些话术带走",
+      "为眼前的爽,常常透支了未来的余地",
+    ],
+    tips: [
+      "试试‘先存后花’:发薪先转走一笔再消费",
+      "给冲动消费加一道‘冷静 24 小时’的门槛",
+      "给未来的自己也留一个固定的账户",
+    ],
+  },
+  远: {
+    strengths: [
+      "长期规划强,延迟满足做得好",
+      "相信复利和时间的力量,已经在为将来布局",
+      "不为一时冲动买单,消费很有定力",
+    ],
+    blinds: [
+      "可能太克制,错过了当下该有的快乐",
+      "凡事都往后推,容易把日子过得紧绷",
+      "过度为未来省,牺牲了眼前的体验和关系",
+    ],
+    tips: [
+      "给当下也留一份‘快乐预算’,别只为未来活",
+      "长期目标之外,允许自己适度地享受",
+      "攒下的钱要安排好去处,别只是一味存着",
+    ],
+  },
+  感: {
+    strengths: [
+      "决策果断、行动力强,不纠结不内耗",
+      "相信直觉,常能快速抓住感觉对的机会",
+      "不被数字绑架,该拍板时很干脆",
+    ],
+    blinds: [
+      "凭感觉容易踩坑,事后又缺少复盘",
+      "对账目和数字不上心,钱花哪了常说不清",
+      "消费决定容易被情绪和氛围左右",
+    ],
+    tips: [
+      "大额决定前,强制自己把账算一遍",
+      "养成记账习惯,让直觉建立在数据之上",
+      "冲动时先问一句:这是需要,还是想要",
+    ],
+  },
+  研: {
+    strengths: [
+      "理性、爱研究,财务决策有依据、少踩坑",
+      "对自己的账目和数字了如指掌",
+      "买大件会比价、看测评,不容易被套路",
+    ],
+    blinds: [
+      "有时分析过度,迟迟不肯行动",
+      "把简单的事想复杂,反而错过了时机",
+      "过于追求最优解,容易在细节里内耗",
+    ],
+    tips: [
+      "想清楚了就出手,别被分析瘫痪拖住",
+      "给决策设个时限,到点就拍板",
+      "抓大放小,别为省几块钱耗掉半天",
+    ],
+  },
 };
 
 // 各极人群占比(用于估算稀有度;每维两极相加=1)
@@ -838,6 +968,21 @@ export function questionAxis(q: FqQuestion): AxisKey {
   return q.options[0]?.axis ?? "income";
 }
 
+/** 确定性伪随机(纯本地,用于按结果稳定挑选文案变体;同一 seed → 同一序列)。 */
+function seededRng(seed: string): () => number {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return () => {
+    h += 0x6d2b79f5;
+    let t = Math.imul(h ^ (h >>> 15), 1 | h);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 /** 洗牌(Fisher–Yates,纯本地随机)。 */
 function shuffle<T>(arr: T[]): T[] {
   const a = arr.slice();
@@ -902,11 +1047,27 @@ export function composeResult(
       leanPct: l.leanPct,
     };
   });
-  // 描述:取倾向最强的两维做优势/盲点,加一句 tip
+  // 描述:按倾向强弱组合优势/盲点/建议。变体用 code+date 确定性挑选(同一结果每次都稳定,不同人有差异)。
   const sorted = [...axes].sort((a, b) => b.leanPct - a.leanPct);
-  const strengths = sorted.slice(0, 2).map((a) => POLE_TEXT[a.poleChar].strength);
-  const blindspots = sorted.slice(0, 2).map((a) => POLE_TEXT[a.poleChar].blind);
-  const tip = POLE_TEXT[sorted[0].poleChar].tip;
+  const rng = seededRng(code + "|" + stored.date);
+  const pick = (arr: string[]) => arr[Math.floor(rng() * arr.length) % arr.length];
+  const dedup = (arr: string[]) => Array.from(new Set(arr));
+
+  // 优势:最强两维必选;第三维若也明显(≥0.62)一并纳入 → 覆盖更多性格面
+  const strengthPoles = sorted.filter((a, i) => i < 2 || a.leanPct >= 0.62).slice(0, 3);
+  const strengths = dedup(strengthPoles.map((a) => pick(POLE_TEXT[a.poleChar].strengths)));
+
+  // 盲点:最强两维(倾向越极端,越是盲点所在)
+  const blindspots = dedup(sorted.slice(0, 2).map((a) => pick(POLE_TEXT[a.poleChar].blinds)));
+  // 四维都均衡 → 补一条“容易摇摆”的提醒
+  const avgLean = axes.reduce((s, a) => s + a.leanPct, 0) / (axes.length || 1);
+  if (avgLean < 0.6) {
+    blindspots.push("四个维度都比较均衡,好处是灵活,但选择时也容易摇摆——不妨给自己定几条明确的花钱原则");
+  }
+
+  // 建议:最强维给一条;次强维若也明显(≥0.66)再补一条
+  let tip = pick(POLE_TEXT[sorted[0].poleChar].tips);
+  if (sorted[1] && sorted[1].leanPct >= 0.66) tip += ";" + pick(POLE_TEXT[sorted[1].poleChar].tips);
   return {
     code,
     name: TYPE_NAME[code] ?? code,
@@ -948,6 +1109,48 @@ export function loadFqResult(): FqStored | null {
 export function clearFqResult() {
   try {
     localStorage.removeItem(FQ_KEY);
+  } catch {
+    /* 忽略 */
+  }
+}
+
+// ── 未完成的答题进度(中途退出保留;单独 key,不进财务备份)──
+const FQ_PROGRESS_KEY = "freegrid-fq-progress-v1";
+export interface FqProgress {
+  questions: FqQuestion[]; // 本次抽到的题目(固定,续答用同一套)
+  answers: number[]; // 每题选中下标,-1 未答
+  current: number; // 当前题
+  date: string;
+}
+export function saveFqProgress(p: FqProgress) {
+  try {
+    localStorage.setItem(FQ_PROGRESS_KEY, JSON.stringify(p));
+  } catch {
+    /* 忽略 */
+  }
+}
+export function loadFqProgress(): FqProgress | null {
+  try {
+    const raw = localStorage.getItem(FQ_PROGRESS_KEY);
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    if (
+      o &&
+      Array.isArray(o.questions) &&
+      o.questions.length > 0 &&
+      Array.isArray(o.answers) &&
+      typeof o.current === "number"
+    ) {
+      return o as FqProgress;
+    }
+  } catch {
+    /* 忽略 */
+  }
+  return null;
+}
+export function clearFqProgress() {
+  try {
+    localStorage.removeItem(FQ_PROGRESS_KEY);
   } catch {
     /* 忽略 */
   }

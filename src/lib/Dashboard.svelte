@@ -3,13 +3,10 @@
   import { deriveDashboard } from "./derive";
   import { freedomUnitLabel, freedomDaysDisplay, GRID_UNIT_META } from "./freedom-math";
   import { simOutcome, gridUnitFor, cellCountFor, blueCellsFor, simDemoTiming } from "./sim-demo";
-  import { EXPENSE_CATEGORIES } from "./models";
-  import { colorForName } from "./categoryColors";
-  import { settings, addCustom } from "./settings.svelte";
+  import { settings } from "./settings.svelte";
   import { quickAdd } from "./quickadd.svelte";
   import Sheet from "./components/Sheet.svelte";
-  import CatPicker from "./components/CatPicker.svelte";
-  import WheelDateTime from "./components/WheelDateTime.svelte";
+  import TxSheet from "./components/TxSheet.svelte";
   import Sparkline from "./components/Sparkline.svelte";
   import FreedomGrid from "./components/FreedomGrid.svelte";
   import SimDemoGrid from "./components/SimDemoGrid.svelte";
@@ -22,52 +19,13 @@
   // 必须连净值一起判 0,别只看 isInf —— "有资产、被动覆盖"也会 ∞,那是合法的财富自由态,不能误当空态。
   const isEmpty = $derived(store.expenses.length === 0 && store.incomes.length === 0 && vm.netWorth === 0);
 
-  // ── 录入 sheet:本地状态 ──
-  const pad = (n: number) => String(n).padStart(2, "0");
-  // 日期+时间精确到分:展示用文案
-  function fmtDateTime(d: Date): string {
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  }
+  // ── 录入 sheet:金额/分类/备注/日期表单已抽到共享 TxSheet 组件 ──
+  type TxValues = { amount: number; name: string; note: string; dateTime: Date };
 
-  // 收入来源快捷选项
-  const SOURCE_PRESETS = ["工资", "奖金", "副业", "投资", "利息", "红包", "其他"];
-
-  // 分类/来源选项(预设 + 自定义)+ 色;常用(按使用频次,附自定义项)
-  const expenseOptions = $derived(
-    [...EXPENSE_CATEGORIES, ...settings.customExpenseCategories].map((name) => ({ name, color: colorForName(name) }))
-  );
-  const incomeOptions = $derived(
-    [...SOURCE_PRESETS, ...settings.customIncomeSources].map((name) => ({ name, color: colorForName(name) }))
-  );
-  function countTop(vals: string[], n: number): string[] {
-    const cnt = new Map<string, number>();
-    for (const k of vals) if (k) cnt.set(k, (cnt.get(k) ?? 0) + 1);
-    return [...cnt.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(([k]) => k);
-  }
-  const expFrequent = $derived.by(() => {
-    const top = countTop(store.expenses.map((e) => e.category), 6);
-    const base = top.length ? top : [...EXPENSE_CATEGORIES].slice(0, 6);
-    return Array.from(new Set([...base, ...settings.customExpenseCategories]));
-  });
-  const incFrequent = $derived.by(() => {
-    const top = countTop(store.incomes.map((i) => i.source), 6);
-    const base = top.length ? top : SOURCE_PRESETS.slice(0, 6);
-    return Array.from(new Set([...base, ...settings.customIncomeSources]));
-  });
-
-  // 记支出
+  // 记支出 / 记收入 开关
   let showExpense = $state(false);
-  let expAmount = $state<number | null>(null);
-  let expCategory = $state<string>(EXPENSE_CATEGORIES[0]);
-  let expNote = $state("");
-  let expDateTime = $state(new Date());
-  const expValid = $derived((expAmount ?? 0) > 0);
-  function resetExpense() {
-    expAmount = null;
-    expCategory = EXPENSE_CATEGORIES[0];
-    expNote = "";
-    expDateTime = new Date();
-  }
+  let showIncome = $state(false);
+
   // ── 记完顶部弹 + 撤销 ──
   type Toast = { id: string; kind: "expense" | "income"; label: string };
   let toast = $state<Toast | null>(null);
@@ -84,44 +42,23 @@
     toast = null;
   }
 
-  function submitExpense() {
-    if (!expValid) return;
-    const id = addExpense(expAmount!, expCategory, expNote.trim(), expDateTime, expDateTime);
-    showToast({ id, kind: "expense", label: `${expCategory} −${yuanAmt(expAmount!)}` });
+  function submitExpense(v: TxValues) {
+    const id = addExpense(v.amount, v.name, v.note, v.dateTime, v.dateTime);
+    showToast({ id, kind: "expense", label: `${v.name} −${yuanAmt(v.amount)}` });
     showExpense = false;
-    resetExpense();
   }
-
-  // 记收入
-  let showIncome = $state(false);
-  let incAmount = $state<number | null>(null);
-  let incSource = $state("");
-  let incNote = $state("");
-  let incDateTime = $state(new Date());
-  const incValid = $derived((incAmount ?? 0) > 0 && incSource.trim().length > 0);
-  function resetIncome() {
-    incAmount = null;
-    incSource = "";
-    incNote = "";
-    incDateTime = new Date();
-  }
-  function submitIncome() {
-    if (!incValid) return;
-    const src = incSource.trim();
-    const id = addIncome(incAmount!, src, false, incNote.trim(), incDateTime, incDateTime);
-    showToast({ id, kind: "income", label: `${src} +${yuanAmt(incAmount!)}` });
+  function submitIncome(v: TxValues) {
+    const id = addIncome(v.amount, v.name, false, v.note, v.dateTime, v.dateTime);
+    showToast({ id, kind: "income", label: `${v.name} +${yuanAmt(v.amount)}` });
     showIncome = false;
-    resetIncome();
   }
 
   // 桌面图标长按快捷方式 → 打开对应记账 Sheet
   $effect(() => {
     if (quickAdd.action === "expense") {
-      resetExpense();
       showExpense = true;
       quickAdd.action = null;
     } else if (quickAdd.action === "income") {
-      resetIncome();
       showIncome = true;
       quickAdd.action = null;
     }
@@ -129,6 +66,8 @@
 
   // 模拟一笔(只预览,不写账本 — 对齐 iOS SimulateSheet)
   let showSim = $state(false);
+  // 自由天数科普弹窗
+  let showExplain = $state(false);
   let simMode = $state<"expense" | "income">("expense");
   let simAmount = $state<number | null>(null);
   const simValid = $derived((simAmount ?? 0) > 0);
@@ -245,6 +184,23 @@
   const dailyStr = $derived(vm.dailyBurn.toFixed(1));
   const passiveStr = $derived(`${Math.round(vm.passiveRatio * 100)}%`);
 
+  // ── 财务状态:求生 / 临界 ──
+  const isSurvival = $derived(vm.state === "survival");
+  const isWarning = $derived(vm.state === "warning");
+  const survivalNumber = $derived(vm.shortfall > 0 ? yuan(vm.shortfall) : "见底");
+  // 求生大数字按字符长度自适应字号,避免大额缺口(如 ¥1,234,567)溢出屏幕
+  const survivalFont = $derived(
+    survivalNumber.length <= 5 ? 104 : survivalNumber.length <= 8 ? 76 : survivalNumber.length <= 11 ? 54 : 42
+  );
+  // 回正进度 = 手上的钱(资产+现金)覆盖负债的比例;补满即净值回正、脱离求生。
+  // 用"覆盖率"而非"缺口÷一个月净烧"—— 后者在负债很大时永远接近 0、记收入/加资产都推不动;
+  // 覆盖率则对 记收入(现金↑)/ 加资产 / 还债(负债↓)都即时响应,不受负债绝对值大小影响。
+  const recoverPct = $derived.by(() => {
+    const gross = Math.max(0, vm.lockedAssets) + Math.max(0, vm.cash);
+    const denom = gross + vm.shortfall; // 求生态下 = 负债总额(gross + (负债−gross))
+    return denom > 0 ? Math.min(1, gross / denom) : 1;
+  });
+
   // ── 仪表盘布局:hero 固定,下方 grid/stats/actions 可重排 ──
   const KNOWN_BLOCKS = ["grid", "stats", "actions"];
   function normalizeOrder(o: string[]): string[] {
@@ -305,17 +261,19 @@
     <section class="vault-card onboard">
       <span class="kicker">WELCOME</span>
       <h2 class="onboard-title">记下<span class="accent">第一笔</span>,点亮你的自由</h2>
-      <p class="onboard-sub">自由日记 把你的资产换算成「还能自由多少天」。先记一笔支出或收入,仪表盘和格子就会亮起来。</p>
+      <p class="onboard-sub">自由日记 把你的资产换算成「还能自由多少天」——像经营公司一样经营你的人生。先记一笔支出或收入,仪表盘和格子就会亮起来。</p>
       <div class="onboard-actions">
         <button class="vbtn flame" onclick={() => (showExpense = true)}>− 记支出</button>
         <button class="vbtn sky" onclick={() => (showIncome = true)}>+ 记收入</button>
       </div>
       <p class="onboard-hint">已有备份或想从别的记账 app 迁入?到「自检 → 个人档案·设置 → 数据」里导入。</p>
+    <p class="onboard-hint">记着记着还能解锁:财商人格测试、个人经营年报、经营等级与外观 —— 都在底部「自检 / 流水」里。</p>
     </section>
   {:else}
 
   <!-- ───── Hero ───── -->
   <section class="vault-card hero" class:glow={true}>
+    <button class="hero-help" onclick={() => (showExplain = true)} aria-label="自由天数怎么算">?</button>
     <!-- 暗色 hero 流星层(移植 iOS MeteorLayer),纯 CSS,亮色自动隐藏 -->
     <div class="meteors" aria-hidden="true">
       <span class="meteor" style="top:8%; left:14%; animation-duration:3.4s; animation-delay:0s"></span>
@@ -348,37 +306,49 @@
       <span class="star s2" style="top:90%; left:84%; animation-duration:5.0s; animation-delay:0.8s"></span>
     </div>
     <div class="hero-main">
-      <span class="kicker">{kicker}</span>
-      <div class="hero-number num" class:inf={isInf}>{vm.freedomDaysDisplay}</div>
-      {#if isInf}
+      {#if isSurvival}
+        <span class="kicker survival-k">SURVIVAL · 求生模式</span>
+        {#if vm.shortfall > 0}<p class="hero-relabel">回正还需</p>{/if}
+        <div class="hero-number num survival" style="font-size:{survivalFont}px">{survivalNumber}</div>
+        <p class="hero-sub">净值已<span class="accent">见底</span> — 先回正,才谈自由</p>
+        <p class="hero-caption survival-cap">日均失血 ¥{dailyStr} · 先止血 / 开源</p>
+      {:else if isInf}
+        <span class="kicker">{kicker}</span>
+        <div class="hero-number num inf">{vm.freedomDaysDisplay}</div>
         <p class="hero-sub">你已<span class="accent">财富</span>自由</p>
         <p class="hero-caption moss">按当前日均消费,被动已覆盖</p>
       {:else}
+        <span class="kicker">{kicker}{#if isWarning} · 临界{/if}</span>
+        <div class="hero-number num">{vm.freedomDaysDisplay}</div>
         <p class="hero-sub">你的<span class="accent">自由</span> 还能撑这么多{unitLabel}</p>
-        {#if vm.depleteDate}
+        {#if isWarning}
+          <p class="hero-caption warn-cap">⚠ 只够撑 {vm.freedomDaysDisplay} 天,注意开源</p>
+        {:else if vm.depleteDate}
           <p class="hero-caption">约 {fmtDeplete(vm.depleteDate)} 见底</p>
         {/if}
       {/if}
     </div>
 
-    <div class="hero-side">
-      {#if vm.delta}
-        {@const up = vm.delta.delta >= 0}
-        <div class="trend" class:up class:down={!up}>
-          <span class="tri">{up ? "▲" : "▼"}</span>
-          <span class="num">{up ? "+" : ""}{vm.delta.delta} d · {weeks}w</span>
-        </div>
-      {/if}
-      {#if vm.history.length >= 3}
-        <div class="spark-block">
-          <div class="spark-cap">
-            <span>{weeks} 周以来的自由天数</span>
-            {#if vm.delta}<span class="num">{vm.delta.start} → {vm.delta.end}</span>{/if}
+    {#if !isSurvival}
+      <div class="hero-side">
+        {#if vm.delta}
+          {@const up = vm.delta.delta >= 0}
+          <div class="trend" class:up class:down={!up}>
+            <span class="tri">{up ? "▲" : "▼"}</span>
+            <span class="num">{up ? "+" : ""}{vm.delta.delta} d · {weeks}w</span>
           </div>
-          <Sparkline values={vm.history.map((h) => h.freedomDays)} height={56} />
-        </div>
-      {/if}
-    </div>
+        {/if}
+        {#if vm.history.length >= 3}
+          <div class="spark-block">
+            <div class="spark-cap">
+              <span>{weeks} 周以来的自由天数</span>
+              {#if vm.delta}<span class="num">{vm.delta.start} → {vm.delta.end}</span>{/if}
+            </div>
+            <Sparkline values={vm.history.map((h) => h.freedomDays)} height={56} />
+          </div>
+        {/if}
+      </div>
+    {/if}
   </section>
 
   {#if editLayout}
@@ -413,21 +383,35 @@
       {/if}
 
       {#if id === "grid"}
-        <!-- ───── Freedom Grid ───── -->
-        <section class="vault-card">
-          <div class="card-head">
-            <span class="kicker">FREEDOM GRID</span>
-            <span class="muted num">{vm.grid.count} {gridUnitLabel}</span>
-          </div>
-          <div class="grid-wrap">
-            <FreedomGrid grid={vm.grid} />
-          </div>
-          <div class="legend">
-            <span class="lg"><i class="dot gold"></i>资产</span>
-            <span class="lg"><i class="dot blue"></i>现金</span>
-            <span class="muted spacer">每格 = 1 {gridUnitLabel}自由</span>
-          </div>
-        </section>
+        {#if isSurvival}
+          <!-- ───── 求生:回正进度回血条(替代空网格)───── -->
+          <section class="vault-card recover-card">
+            <div class="card-head">
+              <span class="kicker">回正进度 · 已覆盖 {Math.round(recoverPct * 100)}%</span>
+              <span class="muted num">缺口 {survivalNumber}</span>
+            </div>
+            <div class="recover-bar">
+              <div class="recover-fill" style="width:{Math.round(recoverPct * 100)}%"></div>
+            </div>
+            <p class="recover-note">手上的钱(资产 + 现金)补到覆盖负债就脱离求生 · <b>记收入 / 加资产 / 还债</b>都在推进回正。</p>
+          </section>
+        {:else}
+          <!-- ───── Freedom Grid ───── -->
+          <section class="vault-card">
+            <div class="card-head">
+              <span class="kicker">FREEDOM GRID</span>
+              <span class="muted num">{vm.grid.count} {gridUnitLabel}</span>
+            </div>
+            <div class="grid-wrap">
+              <FreedomGrid grid={vm.grid} />
+            </div>
+            <div class="legend">
+              <span class="lg"><i class="dot gold"></i>资产</span>
+              <span class="lg"><i class="dot blue"></i>现金</span>
+              <span class="muted spacer">每格 = 1 {gridUnitLabel}自由</span>
+            </div>
+          </section>
+        {/if}
       {:else if id === "stats"}
         <!-- ───── Stats ───── -->
         <section class="stats">
@@ -467,80 +451,28 @@
   {/if}
 </div>
 
-<!-- ───── 记支出 sheet ───── -->
-<Sheet open={showExpense} title="记支出" onClose={() => (showExpense = false)}>
-  <div class="fg-field">
-    <label class="fg-label" for="exp-amount">金额 (元)</label>
-    <input
-      id="exp-amount"
-      class="fg-input fg-amount"
-      type="number"
-      min="0"
-      step="0.01"
-      inputmode="decimal"
-      placeholder="¥ 0.00"
-      bind:value={expAmount}
-    />
-  </div>
-  <div class="fg-field">
-    <span class="fg-label">分类</span>
-    <CatPicker
-      options={expenseOptions}
-      value={expCategory}
-      onSelect={(n) => (expCategory = n)}
-      frequent={expFrequent}
-      allowCustom
-      onAddCustom={(n) => addCustom("expense", n)}
-      placeholder="新分类"
-    />
-  </div>
-  <div class="fg-field">
-    <label class="fg-label" for="exp-note">备注 (可选)</label>
-    <input id="exp-note" class="fg-input" type="text" placeholder="比如:跟朋友吃饭" bind:value={expNote} />
-  </div>
-  <div class="fg-field">
-    <span class="fg-label">日期时间 · {fmtDateTime(expDateTime)}</span>
-    <WheelDateTime bind:value={expDateTime} />
-  </div>
-  <button class="fg-btn flame" disabled={!expValid} onclick={submitExpense}>记下这笔支出</button>
-</Sheet>
+<!-- ───── 记支出 / 记收入 sheet(共享 TxSheet)───── -->
+<TxSheet open={showExpense} kind="expense" onClose={() => (showExpense = false)} onSubmit={submitExpense} />
+<TxSheet open={showIncome} kind="income" onClose={() => (showIncome = false)} onSubmit={submitIncome} />
 
-<!-- ───── 记收入 sheet ───── -->
-<Sheet open={showIncome} title="记收入" onClose={() => (showIncome = false)}>
-  <div class="fg-field">
-    <label class="fg-label" for="inc-amount">金额 (元)</label>
-    <input
-      id="inc-amount"
-      class="fg-input fg-amount"
-      type="number"
-      min="0"
-      step="0.01"
-      inputmode="decimal"
-      placeholder="¥ 0.00"
-      bind:value={incAmount}
-    />
+<!-- ───── 自由天数科普 sheet ───── -->
+<Sheet open={showExplain} title="自由天数怎么算" onClose={() => (showExplain = false)}>
+  <p class="ex-lead">「自由天数」= 如果今天起没有收入,只靠现有身家,还能撑多少天。数字越大,你离「不为钱工作」越近。</p>
+  <div class="ex-formula">
+    <span class="ex-f-line">自由天数 = 净值 ÷ (日均消费 − 日均被动收入)</span>
   </div>
-  <div class="fg-field">
-    <span class="fg-label">来源</span>
-    <CatPicker
-      options={incomeOptions}
-      value={incSource}
-      onSelect={(n) => (incSource = n)}
-      frequent={incFrequent}
-      allowCustom
-      onAddCustom={(n) => addCustom("income", n)}
-      placeholder="新来源"
-    />
+  <div class="ex-nums">
+    <div class="ex-num"><span class="ex-k">净值</span><span class="ex-v num">{yuan(vm.netWorth)}</span></div>
+    <div class="ex-num"><span class="ex-k">日均消费</span><span class="ex-v num">{yuan(vm.dailyBurn, 1)}</span></div>
+    <div class="ex-num"><span class="ex-k">日均被动</span><span class="ex-v num">{yuan(vm.dailyPassive, 1)}</span></div>
+    <div class="ex-num hl"><span class="ex-k">= 自由天数</span><span class="ex-v num">{vm.freedomDaysDisplay}{isInf ? "" : " 天"}</span></div>
   </div>
-  <div class="fg-field">
-    <label class="fg-label" for="inc-note">备注 (可选)</label>
-    <input id="inc-note" class="fg-input" type="text" placeholder="比如:三月奖金" bind:value={incNote} />
-  </div>
-  <div class="fg-field">
-    <span class="fg-label">日期时间 · {fmtDateTime(incDateTime)}</span>
-    <WheelDateTime bind:value={incDateTime} />
-  </div>
-  <button class="fg-btn" disabled={!incValid} onclick={submitIncome}>记下这笔收入</button>
+  <p class="ex-levers-t">三个能拉长它的杠杆</p>
+  <ul class="ex-levers">
+    <li><b>多攒净值</b> — 每存下一笔,跑道就更长。</li>
+    <li><b>压低日均</b> — 少花一点,自由天数立刻变多(试试「模拟一笔」)。</li>
+    <li><b>加被动收入</b> — 房租/分红/利息覆盖日常,被动追平消费时即「财富自由 ∞」。</li>
+  </ul>
 </Sheet>
 
 <!-- ───── 模拟一笔 sheet(只预览,不写账本)───── -->
@@ -914,11 +846,140 @@
     color: var(--moss);
   }
 
+  /* ── 求生 / 临界 hero ── */
+  .survival-k {
+    color: var(--mode-accent, var(--flame));
+    letter-spacing: 0.12em;
+  }
+  .hero-relabel {
+    font-size: 13px;
+    color: var(--ink-faint);
+    margin: var(--sp-sm) 0 -6px;
+  }
+  .hero-number.survival {
+    color: var(--mode-accent, var(--flame));
+    white-space: nowrap;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .hero-caption.survival-cap {
+    color: var(--mode-accent, var(--flame));
+  }
+  .hero-caption.warn-cap {
+    color: var(--sky-deep);
+  }
+
+  /* 求生:星光熄灭(静态暗红点)+ 流星转余烬上飘 + 炉火辉光 */
+  :global(:root[data-mode="survival"]) .stars {
+    animation: none;
+  }
+  :global(:root[data-mode="survival"]) .star {
+    animation: none;
+    background: color-mix(in srgb, var(--flame) 62%, #5a241c);
+    box-shadow: none;
+    opacity: 0.3;
+    transform: none;
+  }
+  :global(:root[data-mode="survival"]) .star:nth-child(3n) {
+    opacity: 0.12;
+  }
+  :global(:root[data-mode="survival"]) .meteor {
+    /* 复用流星元素,但改成圆形余烬颗粒上飘(无头尾方向问题) */
+    width: 3.5px;
+    height: 3.5px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--flame) 88%, #ffcf87);
+    box-shadow: 0 0 6px 1px color-mix(in srgb, var(--flame) 60%, transparent);
+    filter: none;
+    animation-name: ember-rise;
+  }
+  @keyframes ember-rise {
+    0% {
+      opacity: 0;
+      transform: translate(0, 30px) scale(0.6);
+    }
+    20% {
+      opacity: 1;
+    }
+    75% {
+      opacity: 0.75;
+    }
+    100% {
+      opacity: 0;
+      transform: translate(-16px, -130px) scale(1.05);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(:root[data-mode="survival"]) .meteor {
+      animation: none;
+      opacity: 0;
+    }
+  }
+  :global(:root[data-mode="survival"]) .hero::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 72%;
+    pointer-events: none;
+    z-index: 0;
+    background: radial-gradient(
+      130% 88% at 50% 114%,
+      color-mix(in srgb, var(--flame) 50%, transparent) 0%,
+      color-mix(in srgb, var(--flame) 22%, transparent) 38%,
+      transparent 66%
+    );
+  }
+  /* 求生态:内容抬到辉光之上,避免被 ::after 盖住 */
+  :global(:root[data-mode="survival"]) .hero-main,
+  :global(:root[data-mode="survival"]) .hero-side {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ── 回正回血条卡 ── */
+  .recover-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-md);
+  }
+  .recover-bar {
+    height: 12px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--flame) 16%, transparent);
+    overflow: hidden;
+  }
+  .recover-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, color-mix(in srgb, var(--flame) 70%, #8a2c1c), var(--flame));
+    transition: width 0.4s ease;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .recover-fill {
+      transition: none;
+    }
+  }
+  .recover-note {
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--ink-muted);
+    margin: 0;
+  }
+  .recover-note b {
+    color: var(--ink);
+  }
+
   .hero-side {
     display: flex;
     flex-direction: column;
     align-items: flex-end;
     gap: var(--sp-lg);
+    min-width: 0;
   }
   .trend {
     display: inline-flex;
@@ -942,6 +1003,7 @@
   }
   .spark-block {
     width: 100%;
+    min-width: 0;
   }
   .spark-cap {
     display: flex;
@@ -1211,6 +1273,99 @@
     font-size: 13px;
     color: var(--ink-faint);
     margin: var(--sp-sm) 0 0;
+  }
+
+  /* ── 自由天数 hero 帮助按钮 + 科普 sheet ── */
+  .hero-help {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    z-index: 2;
+    width: 26px;
+    height: 26px;
+    border-radius: 999px;
+    border: 1px solid var(--hairline);
+    background: color-mix(in srgb, var(--paper) 55%, transparent);
+    color: var(--ink-faint);
+    font-family: var(--font-rounded);
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease;
+  }
+  .hero-help:hover {
+    color: var(--ink);
+    border-color: var(--ink-ghost);
+  }
+  .ex-lead {
+    font-size: 15px;
+    line-height: 1.65;
+    color: var(--ink);
+    margin: 0 0 var(--sp-lg);
+  }
+  .ex-formula {
+    background: var(--mist2);
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin-bottom: var(--sp-lg);
+  }
+  .ex-f-line {
+    font-size: 14px;
+    color: var(--ink-muted);
+  }
+  .ex-nums {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: var(--sp-lg);
+  }
+  .ex-num {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--hairline-soft);
+  }
+  .ex-num.hl {
+    border-bottom: 0;
+    margin-top: 2px;
+  }
+  .ex-k {
+    font-size: 14px;
+    color: var(--ink-muted);
+  }
+  .ex-num.hl .ex-k {
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .ex-v {
+    font-size: 15px;
+    color: var(--ink);
+  }
+  .ex-num.hl .ex-v {
+    font-size: 20px;
+    color: var(--sky-deep);
+    font-weight: 500;
+  }
+  .ex-levers-t {
+    font-size: 13px;
+    color: var(--ink-faint);
+    margin: 0 0 var(--sp-sm);
+  }
+  .ex-levers {
+    margin: 0;
+    padding-left: 1.1em;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--ink-muted);
+  }
+  .ex-levers b {
+    color: var(--ink);
+    font-weight: 600;
   }
 
   @media (max-width: 720px) {

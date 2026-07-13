@@ -32,9 +32,9 @@ export default defineConfig(({ mode }) => {
               registerType: 'autoUpdate',
               includeAssets: ['icons/apple-touch-icon.png'],
               manifest: {
-                name: '自由日记 · 通往财富自由之路',
+                name: '自由日记 · 经营人生,把花销换算成自由',
                 short_name: '自由日记',
-                description: '把财富自由翻译成「自由天数」的纯本地记账。零网络,数据只存本机浏览器。',
+                description: '像经营公司一样经营人生:把每一笔记账换算成「自由天数」,年底读一份个人经营年报。纯本地、不订阅。',
                 lang: 'zh-CN',
                 theme_color: '#0a0b13',
                 background_color: '#0a0b13',

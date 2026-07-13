@@ -21,8 +21,8 @@
   const C = 2 * Math.PI * R; // 251.327
   const STROKE = 15;
 
-  // 仅可见片(value>0),区块/图例/命中索引共用,保证对齐
-  const visibleSlices = $derived(slices.filter((s) => s.value > 0));
+  // 仅可见片:value>0 且占比四舍五入 ≥1%(极小的碎片会显示成「0%」,既无意义又干扰,直接隐藏)
+  const visibleSlices = $derived(slices.filter((s) => s.value > 0 && Math.round(s.pct) >= 1));
   const total = $derived(visibleSlices.reduce((s, x) => s + x.value, 0));
 
   // 累积起点 + dash 几何 + 起止 frac(用于命中/弧中点)
@@ -254,7 +254,7 @@
       {#if activeSlice}
         <span class="c-name">{activeSlice.name}</span>
         <span class="c-val num">{yuan(activeSlice.value)}</span>
-        <span class="c-label num">{Math.round(activeSlice.pct)}%</span>
+        <span class="c-label num">{activeSlice.pct.toFixed(2)}%</span>
       {:else}
         <span class="c-val num">{centerValue}</span>
         {#if centerLabel}<span class="c-label">{centerLabel}</span>{/if}
@@ -279,7 +279,7 @@
         >
           <span class="leg-dot" style="background:{s.color}"></span>
           <span class="leg-name">{s.name}{#if s.passive}<span class="leg-tag">被动</span>{/if}</span>
-          <span class="leg-pct num">{Math.round(s.pct)}%</span>
+          <span class="leg-pct num">{s.pct.toFixed(2)}%</span>
         </li>
       {/each}
     </ul>

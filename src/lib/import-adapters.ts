@@ -93,30 +93,3 @@ export function parseImport(text: string, currentAssetTotal: number): ParsedImpo
 
   return { ok: false, error: "无法识别格式(需 app 备份 JSON,或含 transactions 的 AI 转换结果)", expCount: 0, incCount: 0 };
 }
-
-/** 生成「复制给 AI」的转换提示词。传入本地支出分类清单,供 AI 映射。 */
-export function buildImportPrompt(expenseCategories: readonly string[]): string {
-  const cats = expenseCategories.join(" / ");
-  return [
-    "你是数据转换助手。请把我在末尾提供的记账数据(CSV 或任意格式)转换成严格的 JSON。规则:",
-    "1. 只输出一个 JSON 对象,不要任何解释文字,不要 markdown 代码块。",
-    '2. 结构:{"transactions":[ ... ]}',
-    "3. 每笔交易对象字段:",
-    '   - "type": "expense"(支出)或 "income"(收入)',
-    '   - "amount": 正数(不带正负号、不带货币符号)',
-    '   - "date": "YYYY-MM-DD"',
-    '   - 支出填 "category";收入填 "source"(自由文本,如 工资/兼职/理财)',
-    '   - "note": 备注,可为空字符串 ""',
-    '   - 收入可加 "passive": true/false(利息/分红/租金等被动收入为 true)',
-    `4. 支出的 "category" 尽量从这些里选最接近的:${cats};实在拿不准填「其他」。`,
-    "5. 金额或日期缺失、无法解析的行请跳过。",
-    "示例输出:",
-    '{"transactions":[',
-    '  {"type":"expense","date":"2024-03-05","amount":42.5,"category":"饮食","note":"午饭"},',
-    '  {"type":"income","date":"2024-03-01","amount":8000,"source":"工资","passive":false}',
-    "]}",
-    "",
-    "下面是我的数据:",
-    "<在这里粘贴你的 CSV / 账单数据>",
-  ].join("\n");
-}

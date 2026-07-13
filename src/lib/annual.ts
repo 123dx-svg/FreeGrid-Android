@@ -8,7 +8,10 @@ import type { Expense, Income, PassiveSource, UserAssets } from "./models";
 import { netWorth } from "./models";
 import { categoryColor, colorForName, PASSIVE_COLOR, categoryOrder } from "./categoryColors";
 
-export type Scope = number | "all";
+export type Quarter = 1 | 2 | 3 | 4;
+export type QuarterScope = { y: number; q: Quarter };
+export type Scope = number | "all" | QuarterScope;
+export const isQuarterScope = (s: Scope): s is QuarterScope => typeof s === "object" && s !== null;
 
 export interface AnnualData {
   expenses: Expense[];
@@ -47,6 +50,7 @@ export interface HealthScore {
 export interface AnnualReport {
   scope: Scope;
   yearLabel: string;
+  isQuarter: boolean; // 季报 = true
   settled: boolean; // 过去自然年 = 已结算;当年/全部 = 未结算
   // 损益
   revenue: number; // 总营收 = 记录收入 + 年化被动源(scope 内)
@@ -94,7 +98,11 @@ const GROWTH = new Set(["成长投资"]);
 
 const sum = (xs: number[]) => xs.reduce((s, v) => s + v, 0);
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
-const inScope = (d: Date, scope: Scope) => scope === "all" || d.getFullYear() === scope;
+const inScope = (d: Date, scope: Scope) => {
+  if (scope === "all") return true;
+  if (typeof scope === "number") return d.getFullYear() === scope;
+  return d.getFullYear() === scope.y && Math.floor(d.getMonth() / 3) + 1 === scope.q;
+};
 
 /** 数据里出现过的年份(降序)。 */
 export function availableYears(expenses: Expense[], incomes: Income[]): number[] {
@@ -234,9 +242,13 @@ export function buildAnnualReport(data: AnnualData, scope: Scope, now: Date = ne
   // 健康分
   const health = scoreHealth(margin, fiProgress, emergencyMonths, freedomDays);
 
-  // 结算判断:具体的过去年 = 已结算;当年或 all = 未结算
-  const settled = typeof scope === "number" && scope < now.getFullYear();
-  const yearLabel = scope === "all" ? "全部" : String(scope);
+  // 结算判断:过去的年/季 = 已结算;当年/当季/all = 未结算
+  const curQ = (Math.floor(now.getMonth() / 3) + 1) as Quarter;
+  const isQ = isQuarterScope(scope);
+  const settled = isQ
+    ? scope.y < now.getFullYear() || (scope.y === now.getFullYear() && scope.q < curQ)
+    : typeof scope === "number" && scope < now.getFullYear();
+  const yearLabel = scope === "all" ? "全部" : isQ ? `${scope.y} Q${scope.q}` : String(scope);
 
   const monthsWithExpense = monthly.filter((m) => m.expense > 0);
   const busiestMonth = monthsWithExpense.length
@@ -249,6 +261,7 @@ export function buildAnnualReport(data: AnnualData, scope: Scope, now: Date = ne
   return {
     scope,
     yearLabel,
+    isQuarter: isQ,
     settled,
     revenue,
     recordedIncome,
@@ -545,7 +558,7 @@ export function buildNarrative(r: AnnualReport, prev?: AnnualReport | null): Nar
   const seed = fnv1a(`${r.yearLabel}|${r.health.score}|${Math.round(r.margin * 100)}|${r.topExpense?.name ?? ""}|${r.expenseCount}`);
   const rng = makeRng(seed);
 
-  const coverTitle = `自由日记 个人经营年报 · ${r.yearLabel}`;
+  const coverTitle = `自由日记 个人经营${r.isQuarter ? "季报" : "年报"} · ${r.yearLabel}`;
   const coverSub = r.settled
     ? `本财年已结算 · 经营评级 ${r.health.rating}（${r.health.score} 分）`
     : `本年至今 · 未结算 · 当前评级 ${r.health.rating}（${r.health.score} 分）`;

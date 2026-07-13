@@ -11,6 +11,8 @@ import {
   freedomDaysHistory,
   deltaSummary,
   depleteDate,
+  financialState,
+  type FinancialState,
   type GridState,
   type HistoryPoint,
 } from "./freedom-math";
@@ -34,6 +36,8 @@ export interface DashboardVM {
   depleteDate: Date | null;
   totalExpenses: number;
   expenseCount: number;
+  state: FinancialState; // 财务状态(free/normal/warning/survival)
+  shortfall: number; // 净值缺口 = max(0, -净值);求生时"回正还需"的金额
 }
 
 export function deriveDashboard(
@@ -68,5 +72,7 @@ export function deriveDashboard(
     depleteDate: depleteDate(fd, now),
     totalExpenses: totalExp,
     expenseCount: expenses.length,
+    state: financialState(nw, fd),
+    shortfall: Math.max(0, -nw),
   };
 }

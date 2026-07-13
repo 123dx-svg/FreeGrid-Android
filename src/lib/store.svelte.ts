@@ -263,6 +263,42 @@ export function addIncome(amount: number, source: string, isPassive = false, not
   return id;
 }
 
+/** 编辑一笔:改 金额/分类|来源/备注/日期时间。现金按金额差修正(支出增→现金减,收入增→现金增),
+ *  日期改动后重算 firstRecordDate。date 与 createdAt 同步为所选 dateTime(与新增一致)。 */
+export function updateTransaction(
+  id: string,
+  kind: "expense" | "income",
+  patch: { amount: number; name: string; note: string; dateTime: Date }
+) {
+  if (kind === "expense") {
+    const e = store.expenses.find((x) => x.id === id);
+    if (!e) return;
+    store.assets.cash += e.amount - patch.amount; // 支出增 → 现金减
+    e.amount = patch.amount;
+    e.category = patch.name;
+    e.note = patch.note;
+    e.date = patch.dateTime;
+    e.createdAt = patch.dateTime;
+  } else {
+    const i = store.incomes.find((x) => x.id === id);
+    if (!i) return;
+    store.assets.cash += patch.amount - i.amount; // 收入增 → 现金增
+    i.amount = patch.amount;
+    i.source = patch.name;
+    i.note = patch.note;
+    i.date = patch.dateTime;
+    i.createdAt = patch.dateTime;
+  }
+  recomputeFirstRecordDate();
+  touch();
+}
+
+/** 从现有全部交易重算最早记录日(编辑/删除改动了日期后调用)。 */
+function recomputeFirstRecordDate() {
+  const times = [...store.expenses, ...store.incomes].map((x) => x.date.getTime());
+  store.assets.firstRecordDate = times.length ? new Date(Math.min(...times)) : null;
+}
+
 export function deleteTransaction(id: string, kind: "expense" | "income") {
   if (kind === "expense") {
     const e = store.expenses.find((x) => x.id === id);
@@ -324,22 +360,14 @@ export function mergeBackup(json: BackupJSON): { added: number; skipped: number 
   const p = fromBackup(json);
   const fp = (kind: string, amount: number, date: Date, key: string, note: string) =>
     `${kind}|${toYMD(date)}|${amount}|${key}|${note}`;
-  const seen = new Set<string>();
-  for (const e of store.expenses) seen.add(fp("e", e.amount, e.date, e.category, e.note));
-  for (const i of store.incomes) seen.add(fp("i", i.amount, i.date, i.source, i.note));
+  // 只跟「已存在记录」去重 —— 本次导入内部即便有完全相同的条目(如同日两笔一样的外卖)也全部保留,
+  // 避免首次导入把真·多笔相同小额误当重复而丢失。重复导入同一文件仍会跳过已存在的。
+  const existing = new Set<string>();
+  for (const e of store.expenses) existing.add(fp("e", e.amount, e.date, e.category, e.note));
+  for (const i of store.incomes) existing.add(fp("i", i.amount, i.date, i.source, i.note));
 
-  const newExp = p.expenses.filter((e) => {
-    const k = fp("e", e.amount, e.date, e.category, e.note);
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
-  const newInc = p.incomes.filter((i) => {
-    const k = fp("i", i.amount, i.date, i.source, i.note);
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
+  const newExp = p.expenses.filter((e) => !existing.has(fp("e", e.amount, e.date, e.category, e.note)));
+  const newInc = p.incomes.filter((i) => !existing.has(fp("i", i.amount, i.date, i.source, i.note)));
   store.expenses = [...store.expenses, ...newExp];
   store.incomes = [...store.incomes, ...newInc];
 

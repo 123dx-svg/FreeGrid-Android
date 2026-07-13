@@ -5,8 +5,9 @@
   import FqEmblem from "./components/FqEmblem.svelte";
   import BadgeWall from "./components/BadgeWall.svelte";
   import Settings from "./components/Settings.svelte";
+  import LifeSimSheet from "./components/LifeSimSheet.svelte";
   import { hasProfile } from "./settings.svelte";
-  import { loadFqResult, composeResult, type FqStored } from "./fq-test";
+  import { loadFqResult, loadFqProgress, composeResult, type FqStored, type FqProgress } from "./fq-test";
 
   // 一个 now 贯穿全程,避免跨午夜漂移(与 Dashboard 同口径)
   const now = new Date();
@@ -15,7 +16,14 @@
   // ── 财商人格测试 ──
   let showTest = $state(false);
   let testFresh = $state(false);
+  let testResume = $state(false);
   let savedStored = $state<FqStored | null>(loadFqResult());
+  let fqProgress = $state<FqProgress | null>(loadFqProgress()); // 未答完的进度(含重测)
+  const hasFqProgress = $derived(fqProgress != null);
+  // 与答题界面同口径的「N/总」计数
+  const fqProgressLabel = $derived(
+    fqProgress ? `${Math.min((fqProgress.current ?? 0) + 1, fqProgress.questions.length)}/${fqProgress.questions.length}` : ""
+  );
 
   const totalIncome = $derived(store.incomes.reduce((s, i) => s + i.amount, 0));
   const totalExpense = $derived(store.expenses.reduce((s, e) => s + e.amount, 0));
@@ -28,17 +36,28 @@
   });
   const savedResult = $derived(savedStored ? composeResult(savedStored, metrics) : null);
 
-  function openTest(fresh: boolean) {
+  function openTest(fresh: boolean, resume = false) {
     testFresh = fresh;
+    testResume = resume;
     showTest = true;
   }
   function closeTest() {
     showTest = false;
     savedStored = loadFqResult(); // 测完刷新入口卡
+    fqProgress = loadFqProgress(); // 中途退出/续答后刷新进度态
   }
 
   // ── 个人档案 · 设置 ──
   let showSettings = $state(false);
+
+  // ── 决策模拟(跳槽 / 创业)· 智能默认 ──
+  let showLifeSim = $state(false);
+  const dailyNetBurn = $derived(Math.max(0, vm.dailyBurn - vm.dailyPassive));
+  const avgMonthlyIncome = $derived.by(() => {
+    const nonPassive = store.incomes.filter((i) => !i.isPassive).reduce((s, i) => s + i.amount, 0);
+    const months = Math.max(1, vm.trackDays / 30.44);
+    return nonPassive / months;
+  });
 </script>
 
 <div class="check">
@@ -50,7 +69,7 @@
   <!-- ───── 财商人格测试入口(始终显示)───── -->
   <section class="fq-card vault-card hi">
     {#if savedResult}
-      <button class="fqc-row" onclick={() => openTest(false)}>
+      <button class="fqc-row" onclick={() => openTest(false, false)}>
         <span class="fqc-media"><FqEmblem code={savedResult.code} size={46} /></span>
         <div class="fqc-info">
           <span class="kicker">我的财商人格</span>
@@ -59,15 +78,21 @@
         </div>
         <span class="fqc-go">›</span>
       </button>
+      {#if hasFqProgress}
+        <!-- 有一份未答完的重测:独立入口保证可续答,不会因为「结果优先」而丢失答题进度 -->
+        <button class="fqc-resume" onclick={() => openTest(false, true)}>
+          继续未完成的测试 · <span class="num">{fqProgressLabel}</span> →
+        </button>
+      {/if}
     {:else}
       <div class="fqc-row">
         <span class="fqc-media"><FqEmblem code="开进远研" size={46} /></span>
         <div class="fqc-info">
           <span class="fqc-title">财商人格测试 · 随机 50 题</span>
-          <span class="fqc-sub">3 分钟测出你的财商人格 + 财商分</span>
+          <span class="fqc-sub">{hasFqProgress ? "有一份未答完的测试,可继续" : "3 分钟测出你的财商人格 + 财商分"}</span>
         </div>
       </div>
-      <button class="fqc-start" onclick={() => openTest(true)}>开始测试 →</button>
+      <button class="fqc-start" onclick={() => openTest(false, hasFqProgress)}>{hasFqProgress ? `继续测试 · ${fqProgressLabel} →` : "开始测试 →"}</button>
     {/if}
   </section>
 
@@ -77,6 +102,9 @@
     <p class="bw-intro">每达成一个里程碑,点亮一枚徽章 —— 记录、储蓄、资产、自由,一步步收集你的财富勋章。</p>
     <BadgeWall />
   </section>
+
+  <!-- ───── 决策模拟入口(跳槽 / 创业)· 与仪表盘/资产的「模拟一笔」同风格 ───── -->
+  <button class="sim-btn" onclick={() => (showLifeSim = true)}>⚡ 决策模拟 · 跳槽 / 创业 →</button>
 
   <!-- ───── 设置入口(置底 · 低频工具)───── -->
   <button class="set-entry vault-card" onclick={() => (showSettings = true)}>
@@ -90,8 +118,9 @@
     <span class="set-entry-go">›</span>
   </button>
 
-  <FqTest open={showTest} startFresh={testFresh} onClose={closeTest} />
+  <FqTest open={showTest} startFresh={testFresh} resume={testResume} onClose={closeTest} />
   <Settings open={showSettings} onClose={() => (showSettings = false)} />
+  <LifeSimSheet open={showLifeSim} {dailyNetBurn} netWorth={vm.netWorth} {avgMonthlyIncome} onClose={() => (showLifeSim = false)} />
 </div>
 
 <style>
@@ -230,6 +259,38 @@
   }
   .fqc-start:hover {
     background: color-mix(in srgb, var(--sky) 26%, transparent);
+  }
+  .fqc-resume {
+    width: 100%;
+    padding: 12px;
+    border-radius: 999px;
+    border: 1px dashed color-mix(in srgb, var(--sky-deep) 55%, transparent);
+    background: transparent;
+    color: var(--sky-deep);
+    font-family: var(--font-rounded);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .fqc-resume:hover {
+    background: color-mix(in srgb, var(--sky) 12%, transparent);
+  }
+
+  /* ── 决策模拟入口(与资产页「模拟一笔」同款金色 ⚡ 胶囊)── */
+  .sim-btn {
+    width: 100%;
+    font-family: var(--font-rounded);
+    font-size: 14px;
+    padding: 13px 18px;
+    border-radius: 999px;
+    background: transparent;
+    border: 1px solid color-mix(in srgb, var(--income-gold) 45%, var(--hairline));
+    color: var(--income-gold);
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+  .sim-btn:hover {
+    background: color-mix(in srgb, var(--income-gold) 8%, transparent);
   }
 
   /* ── 成就徽章墙区 ── */

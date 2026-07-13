@@ -109,6 +109,10 @@ export const EXPENSE_CATEGORIES = [
   "其他",
 ] as const;
 
+// 收入来源权威预设(与「记一笔·记收入」一致,单一来源)。导入时约束 AI 归一到这些,
+// 避免同义来源被拆成多种(如「工作收入 / 工资」)。用户自定义来源另经 settings 追加。
+export const INCOME_SOURCES = ["工资", "奖金", "副业", "投资", "利息", "红包", "其他"] as const;
+
 // 分类分组(用于录入弹窗的分区展示;顺序即展示顺序)
 export const CATEGORY_GROUPS: { label: string; items: string[] }[] = [
   { label: "饮食", items: ["饮食"] },

@@ -5,6 +5,7 @@
   import History from "./lib/History.svelte";
   import Check from "./lib/Check.svelte";
   import BadgeToast from "./lib/components/BadgeToast.svelte";
+  import LevelUpToast from "./lib/components/LevelUpToast.svelte";
   import { store, initStore } from "./lib/store.svelte";
   import { deriveDashboard } from "./lib/derive";
   import { loadFqResult } from "./lib/fq-test";
@@ -66,6 +67,21 @@
 
   $effect(() => {
     document.documentElement.setAttribute("data-theme", resolvedTheme());
+  });
+  $effect(() => {
+    const el = document.documentElement;
+    if (settings.skin) el.setAttribute("data-skin", settings.skin);
+    else el.removeAttribute("data-skin");
+  });
+
+  // ── 财务状态模式(求生 / 临界)：驱动全局 data-mode + 顶部警戒条 ──
+  const dashVm = $derived(deriveDashboard(store));
+  const appMode = $derived(dashVm.state); // free | normal | warning | survival
+  const warnDays = $derived(Math.floor(dashVm.freedomDays));
+  $effect(() => {
+    const el = document.documentElement;
+    if (appMode === "survival" || appMode === "warning") el.setAttribute("data-mode", appMode);
+    else el.removeAttribute("data-mode");
   });
 
   // ── 成就徽章:全局对账(随 store 变化 → 记账/改资产/导入等任何入口解锁都即时触发)──
@@ -129,6 +145,17 @@
 
 </script>
 
+{#if appMode === "survival" || appMode === "warning"}
+  <div class="mode-bar" class:survival={appMode === "survival"} class:warning={appMode === "warning"} role="status">
+    <span class="mode-bar-dot"></span>
+    {#if appMode === "survival"}
+      求生模式 · 净值已见底,先回正
+    {:else}
+      临界 · 自由跑道只剩 {warnDays} 天
+    {/if}
+  </div>
+{/if}
+
 {#if updateState.available}
   <!-- 仅桌面端会出现(网页端 updateState.available 恒 false,此节点不渲染) -->
   <div class="update-banner" role="status">
@@ -179,6 +206,7 @@
 
 <!-- 徽章解锁庆祝浮层(全局) -->
 <BadgeToast onOpenWall={() => (tab = "check")} />
+<LevelUpToast onOpen={() => (tab = "check")} />
 
 <style>
   .shell {

@@ -43,6 +43,19 @@
 
   const byGroup = $derived(ACH_GROUPS.map((g) => ({ group: g, items: ACHIEVEMENTS.filter((a) => a.group === g) })));
 
+  // 隐藏成就:未解锁时只显示「？？？」+ ❓,达成即揭晓(制造探索惊喜)
+  function disp(a: Achievement) {
+    const on = isUnlocked(a.id);
+    const secret = !!a.hidden && !on;
+    return {
+      on,
+      secret,
+      name: secret ? "？？？" : a.name,
+      icon: on ? a.icon : a.hidden ? "❓" : "🔒",
+      desc: secret ? "隐藏成就 —— 达成后揭晓 ✨" : a.desc,
+    };
+  }
+
   // 默认收起省空间;展开看带分组的大网格
   let expanded = $state(false);
   // 收起时的紧凑图标条:已解锁在前,便于一眼总览
@@ -64,13 +77,13 @@
         <p class="bw-gtitle">{g.group}</p>
         <div class="bw-grid">
           {#each g.items as a (a.id)}
-            {@const on = isUnlocked(a.id)}
-            <button class="badge" class:on onclick={() => (selected = a)} style="--hue:{a.hue}">
+            {@const d = disp(a)}
+            <button class="badge" class:on={d.on} onclick={() => (selected = a)} style="--hue:{a.hue}">
               <span class="badge-disc">
-                <span class="badge-ic">{on ? a.icon : "🔒"}</span>
+                <span class="badge-ic">{d.icon}</span>
               </span>
-              <span class="badge-name">{a.name}</span>
-              {#if on}<span class="badge-date num">{fmt(unlockTime(a.id))}</span>{:else}<span class="badge-date locked">未解锁</span>{/if}
+              <span class="badge-name">{d.name}</span>
+              {#if d.on}<span class="badge-date num">{fmt(unlockTime(a.id))}</span>{:else}<span class="badge-date locked">{a.hidden ? "隐藏" : "未解锁"}</span>{/if}
             </button>
           {/each}
         </div>
@@ -80,9 +93,9 @@
   {:else}
     <div class="bw-strip">
       {#each strip as a (a.id)}
-        {@const on = isUnlocked(a.id)}
-        <button class="mini" class:on onclick={() => (selected = a)} style="--hue:{a.hue}" title={a.name}>
-          {on ? a.icon : "🔒"}
+        {@const d = disp(a)}
+        <button class="mini" class:on={d.on} onclick={() => (selected = a)} style="--hue:{a.hue}" title={d.name}>
+          {d.icon}
         </button>
       {/each}
     </div>
@@ -93,17 +106,18 @@
 <!-- 徽章详情 -->
 <Sheet open={selected !== null} title="成就徽章" onClose={() => (selected = null)}>
   {#if selected}
+    {@const d = disp(selected)}
     <div class="bd" style="--hue:{selected.hue}">
-      <span class="bd-disc" class:on={isUnlocked(selected.id)}>
-        <span class="bd-ic">{isUnlocked(selected.id) ? selected.icon : "🔒"}</span>
+      <span class="bd-disc" class:on={d.on}>
+        <span class="bd-ic">{d.icon}</span>
       </span>
-      <p class="bd-name">{selected.name}</p>
-      <p class="bd-desc">{selected.desc}</p>
-      {#if isUnlocked(selected.id)}
+      <p class="bd-name">{d.name}</p>
+      <p class="bd-desc">{d.desc}</p>
+      {#if d.on}
         <p class="bd-date num">{fmt(unlockTime(selected.id))} 点亮</p>
         <button class="bd-share" onclick={doShareBadge} disabled={sharing}>{sharing ? "生成卡片…" : "分享这枚徽章 ↗"}</button>
       {:else}
-        <p class="bd-locked">还没达成 —— 继续加油,达标即刻点亮 ✨</p>
+        <p class="bd-locked">{selected.hidden ? "隐藏成就 —— 悄悄满足条件即可点亮 ✨" : "还没达成 —— 继续加油,达标即刻点亮 ✨"}</p>
       {/if}
     </div>
   {/if}

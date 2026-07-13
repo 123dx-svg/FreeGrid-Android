@@ -74,6 +74,143 @@
   --moss: rgb(92, 158, 107);
 }
 
+/* ── 外观皮肤(按经营等级解锁)：只覆写强调色，不动 dark/light 主体 ── */
+:root[data-skin="star"] {
+  --sky: rgb(152, 141, 235);
+  --sky-deep: rgb(190, 180, 255);
+  --sky-soft: rgb(84, 74, 140);
+  --sky-faint: rgb(38, 34, 66);
+}
+:root[data-theme="light"][data-skin="star"] {
+  --sky: rgb(132, 118, 222);
+  --sky-deep: rgb(96, 78, 196);
+  --sky-soft: rgb(214, 208, 245);
+  --sky-faint: rgb(240, 238, 252);
+}
+:root[data-skin="sun"] {
+  --sky: rgb(240, 168, 92);
+  --sky-deep: rgb(255, 197, 130);
+  --sky-soft: rgb(140, 104, 60);
+  --sky-faint: rgb(66, 50, 32);
+}
+:root[data-theme="light"][data-skin="sun"] {
+  --sky: rgb(232, 152, 66);
+  --sky-deep: rgb(190, 112, 36);
+  --sky-soft: rgb(245, 224, 199);
+  --sky-faint: rgb(252, 245, 237);
+}
+
+/* ── 财务状态模式(求生 / 临界)：整体转警戒色调，覆写强调色 + 背景晕。放皮肤之后以压过皮肤色 ── */
+/* 求生（ember 暗红） */
+:root[data-mode="survival"] {
+  --sky: rgb(232, 120, 100);
+  --sky-deep: rgb(240, 110, 90);
+  --sky-soft: rgb(150, 70, 58);
+  --sky-faint: rgb(60, 28, 26);
+  --mode-accent: rgb(240, 110, 90);
+  --mode-glow: rgba(220, 70, 55, 0.14);
+}
+:root[data-theme="light"][data-mode="survival"] {
+  --sky: rgb(216, 96, 74);
+  --sky-deep: rgb(200, 74, 54);
+  --sky-soft: rgb(245, 214, 206);
+  --sky-faint: rgb(250, 235, 231);
+  --mode-accent: rgb(200, 74, 54);
+  --mode-glow: rgba(210, 90, 70, 0.10);
+}
+/* 临界（amber 琥珀） */
+:root[data-mode="warning"] {
+  --sky: rgb(232, 178, 96);
+  --sky-deep: rgb(240, 185, 95);
+  --sky-soft: rgb(140, 110, 50);
+  --sky-faint: rgb(58, 48, 26);
+  --mode-accent: rgb(240, 185, 95);
+  --mode-glow: rgba(230, 170, 70, 0.08);
+}
+:root[data-theme="light"][data-mode="warning"] {
+  --sky: rgb(216, 164, 70);
+  --sky-deep: rgb(196, 140, 40);
+  --sky-soft: rgb(245, 232, 206);
+  --sky-faint: rgb(250, 244, 231);
+  --mode-accent: rgb(196, 140, 40);
+  --mode-glow: rgba(220, 160, 60, 0.07);
+}
+
+/* 背景晕：整屏极淡警戒色辉光（固定层，不拦交互，随主题红/琥珀） */
+:root[data-mode="survival"] body::before,
+:root[data-mode="warning"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 80% at 50% 108%, var(--mode-glow), transparent 60%),
+    radial-gradient(120% 60% at 50% -8%, var(--mode-glow), transparent 55%);
+}
+
+/* 全局警戒条（状态栏下，跨所有 tab，固定层） */
+.mode-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: calc(env(safe-area-inset-top, 0px) + 6px) 12px 6px;
+  font-family: var(--font-rounded);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #fff;
+  animation: modeBarIn 0.25s ease;
+}
+/* 有警戒条时，给主内容顶部让位（不被固定条盖住） */
+:root[data-mode="survival"] main,
+:root[data-mode="warning"] main {
+  padding-top: calc(env(safe-area-inset-top, 0px) + var(--sp-lg) + 30px);
+}
+.mode-bar.survival {
+  background: linear-gradient(180deg, rgb(150, 44, 34), rgb(120, 36, 30));
+}
+.mode-bar.warning {
+  background: linear-gradient(180deg, rgb(150, 110, 34), rgb(120, 90, 28));
+}
+.mode-bar-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.9;
+  animation: modeBarPulse 1.8s ease-in-out infinite;
+}
+@keyframes modeBarIn {
+  from {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+}
+@keyframes modeBarPulse {
+  0%, 100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mode-bar {
+    animation: none;
+  }
+  .mode-bar-dot {
+    animation: none;
+    opacity: 0.9;
+  }
+}
+
 * {
   box-sizing: border-box;
   /* 去掉 WebView 触摸点击时的淡蓝高亮框(看着像调试框)*/
