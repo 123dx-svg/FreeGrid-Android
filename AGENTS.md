@@ -46,7 +46,7 @@
 - **release keystore**：`F:\AIGenerate\APP\keystore\freegrid-release.jks`（仓库外，有效期 ~27 年，别名 `freegrid`）。
 - **口令**：在 `android/keystore.properties`（**已 gitignore，不入库**）。证书 `CN=FreeGrid`，SHA-256 指纹 `0ce657932cd56ec583fd081812d2870a3c50ed9f655d33abadd5dadab6405d87`。
 - **铁律 1**：`freegrid-release.jks` + `keystore.properties` **必须异地备份**。丢了 = 所有老用户永远无法再升级。
-- **铁律 2**：每次发布 **`versionCode` 必须 +1**（在 `android/app/build.gradle`）。当前已到 87（v2.64）。
+- **铁律 2**：每次发布 **`versionCode` 必须 +1**（在 `android/app/build.gradle`）。当前已到 92（v2.69）。
 - **铁律 3**：**debug 签名与 release 签名互不兼容**。给用户/装真机**永远用 release 版**（`build-release.bat`）。debug↔release 互切必须卸载=丢数据。
 - **铁律 4**：升级用 `adb install -r <release-apk>`（不卸载，保数据）。✅ 已实测 vc2→vc3 数据保留。
 - 用户的**小米 14 Pro 从第一次就装 release 版**，否则将来切 release 要卸载丢数据。
@@ -66,6 +66,13 @@
 - **红线**:全本机、不联网、不进跨端账单备份(`freegrid-backup.json` 格式不变、iOS/web 兼容);AI 密钥不进导出文件;`restore` 仅接受 `freegrid-` 前缀键(防越权写)。无新依赖(Filesystem/App 已装)。`backup-full.test.ts` 6 测,`npm test` 46/46,`svelte-check` 0 error。
 
 ## 已完成的适配
+- ✅ 省电:隐藏时暂停装饰动画(vc92/v2.69):真机反馈耗电偏高(≈0.54%/min,接近视频 App)——根因是仪表盘星空/流星/辉光的**持续 CSS 动画**在没人看时仍满帧合成。方案(用户选「离开仪表盘停止就行」,不精简辉光):`app.css` 加 `:root[data-idle="1"] *{animation-play-state:paused!important}`;`App.svelte` 切换 `<html data-idle>` —— **原生用 `@capacitor/app` 的 `appStateChange`(isActive→"0"/"1")**,web 用 `visibilitychange`。**⚠ 坑**:原生 WebView 的 `visibilitychange` 在 resume 后可能仍报 hidden,会把动画卡死(实测),故原生**只用 appStateChange**、不挂 visibilitychange。tab 切换本就 unmount 仪表盘(动画随之停),故只需覆盖息屏/切后台。真机验证:? 科普 sheet 前台能正常动画入场(证明未卡死);背景→前台循环后仍正常。paused 保留进度、恢复无缝。**注**:只在隐藏时省电,前台主动看仪表盘的动画开销不变(用户接受)。
+- ✅ 自由天数科普单位对齐 hero(vc90/v2.67):真机反馈「? 科普弹窗里自由天数的单位和外部面板不一致」。根因:`freedomDaysDisplay(fd)` 返回**按档位换算后的显示数**(≥1年时是「月」值,如 35),但科普弹窗 `= 自由天数` 行硬编码「天」→ 显示「35 天」(其实是 35 月),与 hero「35 月」矛盾且公式(净值÷日均净烧=天)不自洽。修:`Dashboard.svelte` 科普行改为显示**原始天数**(`Math.round(vm.freedomDays)` + 千分位 + 「天」,公式除法自洽),`vm.unit !== "day"` 时再追加「· ≈ {freedomDaysDisplay} {unitLabel}」与 hero 对齐。真机验证:195990÷180.4 → 「1,086 天 · ≈ 35 月」,月值与 hero 一致。
+- ✅ 资产/负债明细排序(vc89/v2.66):`Assets.svelte` 明细区标题加排序按钮(≥2 项才显示,「↕ 金额/收益·利率/类型」循环);`sortItems()` 金额↓ / 利率↓(收益或利率,并列按金额)/ 类型(按 `ASSET_TYPES`/`LIABILITY_TYPES` 预设序);选择持久化在 `settings.assetSort`/`liabilitySort`(默认 amount)。CSS:`.detail-head .kicker{margin-right:auto}` 把排序钮+加号推到右侧(排序钮隐藏时加号仍右对齐)。真机验证:负债切「利率」→ 信用卡 18.25% 升到房贷 4.9% 之上(呼应 AI「先还高息」)。
+- ✅ 账单导入后引导校准资产/现金 + 替换不丢资产(vc88/v2.65):真机反馈「AI 导入完账单后仪表盘/资产没更新」。**排查结论:不是响应式 bug** —— 真机实测 merge 后仪表盘的流水派生量(日均/自由天数/被动占比/网格/年报)全部即时更新;只有**净值/现金/资产不变**,因为 `mergeBackup` 只加流水、不动资产快照(账单也不含资产)。这是 UX 认知落差,非崩溃。修:
+  - **可选「反映到现金」+ 引导**:`mergeBackup` 现返回 `cashDelta`(新增收入−新增支出);`store` 加 `adjustCash(delta)`(允许透支为负,与记一笔一致)。`DataTools.doImport` 合并有新增 → 弹**导入后引导 Sheet**「已合并 N 笔·自由天数/年报已更新;账单不含现金/资产,净值不会自动变。净支出 ¥X —— 若还没从现金扣可一键更新,否则跳过、到资产页手动校准」+ 按钮「从现金扣 ¥X / 跳过·手动校准」。真机验证:合并 3 笔(净支出¥4010)→ 点「从现金扣」→ 现金 60000→55990、净值 200000→195990、资产/负债明细完好。
+  - **替换不再清空已录资产**:`runAiImport` 构造的 backup 之前只带 `{total}`,「替换」会把定期/基金/负债等塌成现金、丢明细。现改为带上当前 `asset_items`/`liability_items`/`liabilities`,替换也完整保留资产明细。决策 Sheet 文案同步:合并「账单只更新流水与统计,不改动你的现金/资产」;替换(AI/CSV 来源)「保留你已录的资产/负债」。
+  - `svelte-check` 0 error;`npm test` 46/46。红线不动。
 - ✅ 资产/负债总额去重(vc87/v2.64,方案 B):顶部三列总览(资产/现金/负债)与「资产明细/负债明细」标题里的总额重复。改:①删「资产明细」「负债明细」标题里的 `.detail-total`(:248/:274)→ 标题只留 kicker + 右侧「＋」;②去掉资产/负债总览卡的铅笔(加项走明细区「＋」、编辑走点明细行),**现金卡保留铅笔**(现金无明细,只能直接编辑);③删无用 `.detail-total` CSS。心智模型:上=三个总额一眼看全,下=组成项列表。纯布局,不动数据/净值/备份/AI。真机验证:总额只出现一次、「＋」加项 sheet 正常。
 - ✅ 资产明细也可填年化收益率 + 编辑 sheet 按钮对齐(vc86/v2.63):
   - **资产年化收益率**:`AssetItem` 加 `rate`(年化收益率%,0=未填);`BackupAssetItemJSON` 加 `rate`;`toBackup/fromBackup`、`addAssetItem(...,rate)`/`updateAssetItem({rate})`、`demo.ts` 均带上。`Assets.svelte` 资产 sheet 加「年化收益率%(可选)」字段(提示「定期/债券/基金等有预期年化的可填」);资产项行显示**绿色** `.item-rate.gain` 徽章(`--moss`,区别于负债的红色徽章)。

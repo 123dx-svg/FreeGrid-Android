@@ -1,7 +1,7 @@
 <script lang="ts">
   // 数据 · 备份与导入 —— 从资产页迁来的全 app 级数据工具(导出/导入/AI提示词/清空)。
   // 独立组件,单一来源;供设置页挂载。
-  import { store, exportJSONString, exportJSONStringForYear, importBackup, mergeBackup, clearAll } from "../store.svelte";
+  import { store, exportJSONString, exportJSONStringForYear, importBackup, mergeBackup, adjustCash, clearAll } from "../store.svelte";
   import { EXPENSE_CATEGORIES, INCOME_SOURCES } from "../models";
   import { availableYears } from "../annual";
   import { restoreBadgeMeta, markBadgeEvent } from "../achievements.svelte";
@@ -263,7 +263,24 @@
     pendingImport = {
       ok: true,
       source: "ai",
-      backup: { assets: { total, updated_at: new Date().toISOString() }, expenses, incomes, passive_sources: [], first_record_date: null },
+      // 账单只有流水:资产带上当前明细,让「替换」也不丢已录的定期/基金/负债等
+      backup: {
+        assets: {
+          total,
+          liabilities: store.assets.liabilities || undefined,
+          updated_at: new Date().toISOString(),
+          asset_items: store.assets.assetItems.length
+            ? store.assets.assetItems.map((a) => ({ type: a.type, name: a.name || undefined, amount: a.amount, rate: a.rate || undefined }))
+            : undefined,
+          liability_items: store.assets.liabilityItems.length
+            ? store.assets.liabilityItems.map((l) => ({ type: l.type, amount: l.amount, rate: l.rate || undefined }))
+            : undefined,
+        },
+        expenses,
+        incomes,
+        passive_sources: [],
+        first_record_date: null,
+      },
       expCount: expenses!.length,
       incCount: incomes!.length,
     };
@@ -283,12 +300,14 @@
       await new Promise((r) => setTimeout(r, 40)); // 让进度条渲染出来
     }
     let doneMsg: string;
+    let merged: { added: number; cashDelta: number } | null = null;
     if (mode === "replace") {
       importBackup(res.backup);
       doneMsg = `已替换导入 · ${count} 笔`;
     } else {
       const r = mergeBackup(res.backup);
       doneMsg = `已合并 ${r.added} 笔${r.skipped ? ` · 跳过重复 ${r.skipped}` : ""}`;
+      if (r.added > 0) merged = { added: r.added, cashDelta: r.cashDelta };
     }
     // 恢复 app_meta:徽章按并集(取更早时间戳)、财商仅在本机无存档时补上(不覆盖)
     const meta = res.backup.app_meta;
@@ -300,7 +319,18 @@
       }
     }
     phase = "idle";
-    showMsg(doneMsg, false, 3500);
+    // 合并有新增 → 弹「反映到现金 / 手动校准」引导(账单不含资产,净值不会自动变)
+    if (merged) reconcile = merged;
+    else showMsg(doneMsg, false, 3500);
+  }
+
+  // ── 导入后:账单流水已进库,但资产/现金是单独快照,引导用户校准 ──
+  let reconcile = $state<{ added: number; cashDelta: number } | null>(null);
+  function applyReconcile() {
+    const d = reconcile?.cashDelta ?? 0;
+    if (d !== 0) adjustCash(d);
+    reconcile = null;
+    showMsg(d < 0 ? `已从现金扣除 ¥${Math.round(-d)}` : d > 0 ? `已记入现金 ¥${Math.round(d)}` : "已导入", false, 3000);
   }
 
   // ── 清空 ──
@@ -432,14 +462,37 @@
       {#if pendingImport.source === "app"}<span class="imp-tag">来自 app 备份</span>{:else}<span class="imp-tag">AI 转换</span>{/if}
     </p>
     <p class="imp-hint">
-      <b>合并</b>:追加到现有账本(重复的自动跳过),资产净值不变。<br />
-      <b>替换</b>:清空现有记录后整体导入{#if pendingImport.source === "app"}(含资产){/if}。
+      <b>合并</b>:追加到现有账本(重复的自动跳过);账单只更新流水与统计,<b>不改动你的现金 / 资产</b>。<br />
+      <b>替换</b>:清空现有记录后整体导入{#if pendingImport.source === "app"}(含资产){:else}(保留你已录的资产 / 负债){/if}。
     </p>
     <div class="imp-actions">
       <button class="vbtn" onclick={() => doImport("merge")}>合并</button>
       <button class="vbtn danger" onclick={() => doImport("replace")}>替换</button>
     </div>
     <button class="imp-cancel" onclick={() => (pendingImport = null)}>取消</button>
+  {/if}
+</Sheet>
+
+<!-- 导入后引导:账单流水已进库,资产/现金是单独快照 -->
+<Sheet open={reconcile !== null} title="账单已合并" onClose={() => (reconcile = null)}>
+  {#if reconcile}
+    <p class="imp-sum">已合并 <b class="num">{reconcile.added}</b> 笔 · 自由天数 / 年报已更新</p>
+    <p class="imp-hint">
+      账单不含你的现金 / 资产,<b>净值不会自动变动</b>。
+      {#if reconcile.cashDelta < 0}
+        <br />这些账单<b>净支出 ¥{Math.round(-reconcile.cashDelta)}</b> —— 若这笔还没从现金里扣过,可一键更新;若现金已对得上或是历史账单,就跳过、到「资产」页手动校准。
+      {:else if reconcile.cashDelta > 0}
+        <br />这些账单<b>净收入 ¥{Math.round(reconcile.cashDelta)}</b> —— 若还没记进现金,可一键更新;否则跳过、到「资产」页手动校准。
+      {:else}
+        <br />如与实际不符,到「资产」页手动校准现金 / 资产即可。
+      {/if}
+    </p>
+    <div class="imp-actions">
+      {#if reconcile.cashDelta !== 0}
+        <button class="vbtn" onclick={applyReconcile}>{reconcile.cashDelta < 0 ? `从现金扣 ¥${Math.round(-reconcile.cashDelta)}` : `记入现金 ¥${Math.round(reconcile.cashDelta)}`}</button>
+      {/if}
+      <button class="vbtn" onclick={() => (reconcile = null)}>{reconcile.cashDelta !== 0 ? "跳过 · 手动校准" : "知道了"}</button>
+    </div>
   {/if}
 </Sheet>
 

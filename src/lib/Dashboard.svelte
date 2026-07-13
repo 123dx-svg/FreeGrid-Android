@@ -517,7 +517,7 @@
     <div class="ex-num"><span class="ex-k">净值</span><span class="ex-v num">{yuan(vm.netWorth)}</span></div>
     <div class="ex-num"><span class="ex-k">日均消费</span><span class="ex-v num">{yuan(vm.dailyBurn, 1)}</span></div>
     <div class="ex-num"><span class="ex-k">日均被动</span><span class="ex-v num">{yuan(vm.dailyPassive, 1)}</span></div>
-    <div class="ex-num hl"><span class="ex-k">= 自由天数</span><span class="ex-v num">{vm.freedomDaysDisplay}{isInf ? "" : " 天"}</span></div>
+    <div class="ex-num hl"><span class="ex-k">= 自由天数</span><span class="ex-v num">{isInf ? "∞" : `${Math.round(vm.freedomDays).toLocaleString("en-US")} 天`}{#if !isInf && vm.unit !== "day"} · ≈ {vm.freedomDaysDisplay} {unitLabel}{/if}</span></div>
   </div>
   <p class="ex-levers-t">三个能拉长它的杠杆</p>
   <ul class="ex-levers">

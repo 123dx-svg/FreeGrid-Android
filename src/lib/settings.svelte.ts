@@ -37,7 +37,11 @@ export interface Settings {
   title: string; // 展示称号(按徽章解锁);"" = 默认(等级名)
   txTemplates: TxTemplate[]; // 常用记账模板(房租/订阅/工资等)
   lastBackupAt: string; // 上次导出备份时间(ISO);"" = 从未
+  assetSort: AssetSort; // 资产明细排序
+  liabilitySort: AssetSort; // 负债明细排序
 }
+
+export type AssetSort = "amount" | "rate" | "type";
 
 const KEY = "freegrid-settings-v1";
 const LEGACY_THEME_KEY = "freegrid-theme";
@@ -64,6 +68,8 @@ function defaults(): Settings {
     title: "",
     txTemplates: [],
     lastBackupAt: "",
+    assetSort: "amount",
+    liabilitySort: "amount",
   };
 }
 
@@ -87,6 +93,9 @@ function loadInitial(): Settings {
         if (typeof o.skin === "string") s.skin = o.skin;
         if (typeof o.title === "string") s.title = o.title;
         if (typeof o.lastBackupAt === "string") s.lastBackupAt = o.lastBackupAt;
+        const asSort = (v: unknown): AssetSort | null => (v === "amount" || v === "rate" || v === "type" ? v : null);
+        if (asSort(o.assetSort)) s.assetSort = asSort(o.assetSort)!;
+        if (asSort(o.liabilitySort)) s.liabilitySort = asSort(o.liabilitySort)!;
         if (Array.isArray(o.txTemplates)) {
           s.txTemplates = o.txTemplates
             .filter((t: unknown): t is Record<string, unknown> => !!t && typeof t === "object")
@@ -144,6 +153,8 @@ $effect.root(() => {
       title: settings.title,
       txTemplates: settings.txTemplates.map((t) => ({ ...t })),
       lastBackupAt: settings.lastBackupAt,
+      assetSort: settings.assetSort,
+      liabilitySort: settings.liabilitySort,
     };
     try {
       localStorage.setItem(KEY, JSON.stringify(snap));

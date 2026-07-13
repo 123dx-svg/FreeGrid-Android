@@ -48,6 +48,10 @@
       // 冷启动(经快捷方式打开)+ 热启动(app 在后台时点快捷方式)
       CapApp.getLaunchUrl().then((r) => handleQuickUrl(r?.url));
       CapApp.addListener("appUrlOpen", (e) => handleQuickUrl(e.url));
+      // 省电:原生前后台切换(比 WebView visibilitychange 更可靠)→ 暂停/恢复动画
+      CapApp.addListener("appStateChange", ({ isActive }) => {
+        document.documentElement.setAttribute("data-idle", isActive ? "0" : "1");
+      });
     });
   }
 
@@ -72,6 +76,20 @@
     const el = document.documentElement;
     if (settings.skin) el.setAttribute("data-skin", settings.skin);
     else el.removeAttribute("data-skin");
+  });
+
+  // ── 省电:页面隐藏(息屏 / 切后台)时暂停所有 CSS 装饰动画,避免仪表盘星空 /
+  //    流星 / 辉光在没人看时白烧 GPU;`data-idle` 由 app.css 一键 paused,恢复无缝续播。
+  //    原生用 appStateChange(见下方 CapApp 块,可靠);web 用 visibilitychange。
+  //    ⚠ 原生 WebView 的 visibilitychange 在 resume 后可能仍报 hidden → 会把动画卡死,故原生不用它。
+  $effect(() => {
+    if (Capacitor.isNativePlatform()) return;
+    const onVis = () => {
+      document.documentElement.setAttribute("data-idle", document.hidden ? "1" : "0");
+    };
+    onVis();
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
   });
 
   // ── 财务状态模式(求生 / 临界)：驱动全局 data-mode + 顶部警戒条 ──

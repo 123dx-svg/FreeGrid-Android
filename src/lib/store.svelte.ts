@@ -453,7 +453,7 @@ export function importBackup(json: BackupJSON) {
 
 /** 导入:合并进现有账本(追加 + 内容去重;被动源按名合并;资产/净值保持不变)。
  *  返回 { added, skipped }。 */
-export function mergeBackup(json: BackupJSON): { added: number; skipped: number } {
+export function mergeBackup(json: BackupJSON): { added: number; skipped: number; cashDelta: number } {
   const p = fromBackup(json);
   const fp = (kind: string, amount: number, date: Date, key: string, note: string) =>
     `${kind}|${toYMD(date)}|${amount}|${key}|${note}`;
@@ -482,7 +482,15 @@ export function mergeBackup(json: BackupJSON): { added: number; skipped: number 
 
   const total = p.expenses.length + p.incomes.length;
   const added = newExp.length + newInc.length;
-  return { added, skipped: total - added };
+  // 新增流水的现金净额(收入 − 支出):供导入后可选「反映到现金」用
+  const cashDelta = newInc.reduce((s, i) => s + i.amount, 0) - newExp.reduce((s, e) => s + e.amount, 0);
+  return { added, skipped: total - added, cashDelta };
+}
+
+/** 按增量调整现金(导入后可选把账单净额反映到现金;允许透支为负,与记一笔一致)。 */
+export function adjustCash(delta: number) {
+  store.assets.cash += delta;
+  touch();
 }
 
 export function clearAll() {

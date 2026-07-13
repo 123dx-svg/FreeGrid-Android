@@ -5,6 +5,15 @@
  * 零外链字体文件,天然满足"零网络"隐私承诺。
  * ============================================================================ */
 
+/* 省电:页面隐藏(息屏 / 切后台 / 离开仪表盘)时暂停一切 CSS 装饰动画,
+ * 避免仪表盘星空 / 流星 / 辉光在没人看时持续占用 GPU。由 App.svelte 的
+ * visibilitychange 切换 <html data-idle>。paused 会保留进度,恢复即无缝续播。 */
+:root[data-idle="1"] *,
+:root[data-idle="1"] *::before,
+:root[data-idle="1"] *::after {
+  animation-play-state: paused !important;
+}
+
 :root {
   --font-rounded: ui-rounded, "SF Pro Rounded", -apple-system, system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
   --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Menlo", monospace;

@@ -9,6 +9,7 @@
   import CatSelect from "./components/CatSelect.svelte";
   import { ASSET_TYPES, LIABILITY_TYPES } from "./models";
   import { assetTypeColor, liabilityTypeColor } from "./categoryColors";
+  import { settings, type AssetSort } from "./settings.svelte";
   import {
     store,
     updateBucket,
@@ -50,8 +51,28 @@
   const passiveCovered = $derived(vm.passiveRatio >= 1);
   const passiveSources = $derived(store.passiveSources); // 空 → 渲染空态提示
 
+  // ── 明细排序(金额↓ / 利率↓ / 类型),持久化在 settings ──
+  const ASSET_ORDER = new Map(ASSET_TYPES.map((t, i) => [t, i]));
+  const LIAB_ORDER = new Map(LIABILITY_TYPES.map((t, i) => [t, i]));
+  function sortItems<T extends { type: string; amount: number; rate: number }>(items: T[], mode: AssetSort, order: Map<string, number>): T[] {
+    const arr = [...items];
+    if (mode === "rate") arr.sort((a, b) => (b.rate || 0) - (a.rate || 0) || b.amount - a.amount);
+    else if (mode === "type") arr.sort((a, b) => (order.get(a.type) ?? 99) - (order.get(b.type) ?? 99) || b.amount - a.amount);
+    else arr.sort((a, b) => b.amount - a.amount);
+    return arr;
+  }
+  const SORT_CYCLE: AssetSort[] = ["amount", "rate", "type"];
+  const assetSortLabel = $derived(settings.assetSort === "rate" ? "收益" : settings.assetSort === "type" ? "类型" : "金额");
+  const liabSortLabel = $derived(settings.liabilitySort === "rate" ? "利率" : settings.liabilitySort === "type" ? "类型" : "金额");
+  function cycleAssetSort() {
+    settings.assetSort = SORT_CYCLE[(SORT_CYCLE.indexOf(settings.assetSort) + 1) % SORT_CYCLE.length];
+  }
+  function cycleLiabSort() {
+    settings.liabilitySort = SORT_CYCLE[(SORT_CYCLE.indexOf(settings.liabilitySort) + 1) % SORT_CYCLE.length];
+  }
+
   // ── 资产明细项(增/改共用一个 sheet;editId=null 为新增)──
-  const assetItems = $derived(store.assets.assetItems);
+  const assetItems = $derived(sortItems(store.assets.assetItems, settings.assetSort, ASSET_ORDER));
   const assetTypeOpts = $derived(ASSET_TYPES.map((t) => ({ name: t, color: assetTypeColor(t) })));
   let showAssetSheet = $state(false);
   let assetEditId = $state<string | null>(null);
@@ -92,7 +113,7 @@
   }
 
   // ── 负债明细项(含年化利率)──
-  const liabilityItems = $derived(store.assets.liabilityItems);
+  const liabilityItems = $derived(sortItems(store.assets.liabilityItems, settings.liabilitySort, LIAB_ORDER));
   const liabTypeOpts = $derived(LIABILITY_TYPES.map((t) => ({ name: t, color: liabilityTypeColor(t) })));
   let showLiabSheet = $state(false);
   let liabEditId = $state<string | null>(null);
@@ -235,6 +256,12 @@
       <section class="vault-card detail">
         <div class="detail-head">
           <span class="kicker">资产明细</span>
+          {#if assetItems.length > 1}
+            <button class="sort-btn" onclick={cycleAssetSort} aria-label="切换资产排序">
+              <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path fill="currentColor" d="M8 4v13l-3-3-1.4 1.4L9 20.8l5.4-5.4L13 14l-3 3V4H8Zm8 3.2 3-3 3 3L21.6 5.8 17 1.2l-4.6 4.6L13.8 7.2 16 5v13h2V7.2Z"/></svg>
+              {assetSortLabel}
+            </button>
+          {/if}
           <button class="add-btn" aria-label="添加资产" onclick={() => openAsset(null)}>
             <svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2h6Z"/></svg>
           </button>
@@ -260,6 +287,12 @@
       <section class="vault-card detail">
         <div class="detail-head">
           <span class="kicker">负债明细</span>
+          {#if liabilityItems.length > 1}
+            <button class="sort-btn" onclick={cycleLiabSort} aria-label="切换负债排序">
+              <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path fill="currentColor" d="M8 4v13l-3-3-1.4 1.4L9 20.8l5.4-5.4L13 14l-3 3V4H8Zm8 3.2 3-3 3 3L21.6 5.8 17 1.2l-4.6 4.6L13.8 7.2 16 5v13h2V7.2Z"/></svg>
+              {liabSortLabel}
+            </button>
+          {/if}
           <button class="add-btn" aria-label="添加负债" onclick={() => openLiab(null)}>
             <svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2h6Z"/></svg>
           </button>
@@ -688,8 +721,26 @@
     gap: 8px;
     margin-bottom: var(--sp-sm);
   }
-  .detail-head .add-btn {
-    margin-left: auto;
+  .detail-head .kicker {
+    margin-right: auto;
+  }
+  .sort-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: transparent;
+    border: 1px solid var(--hairline-soft);
+    border-radius: 999px;
+    padding: 4px 11px;
+    color: var(--ink-faint);
+    font-family: var(--font-rounded);
+    font-size: 12px;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease;
+  }
+  .sort-btn:hover {
+    color: var(--ink-muted);
+    border-color: var(--hairline);
   }
   .detail-empty {
     margin: 0;
