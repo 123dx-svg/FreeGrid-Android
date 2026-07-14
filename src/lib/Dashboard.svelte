@@ -826,8 +826,8 @@
       transparent 52%,
       color-mix(in srgb, var(--sky-deep) 85%, transparent) 100%
     );
-    filter: drop-shadow(0 0 2px color-mix(in srgb, var(--sky-deep) 40%, transparent));
     opacity: 0;
+    will-change: transform, opacity;
     animation-name: shoot;
     animation-timing-function: linear;
     animation-iteration-count: infinite;
@@ -839,7 +839,6 @@
       transparent 52%,
       color-mix(in srgb, var(--sky) 92%, white) 100%
     );
-    filter: drop-shadow(0 0 3px var(--sky));
   }
   @keyframes shoot {
     0% {

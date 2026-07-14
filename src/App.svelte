@@ -49,6 +49,8 @@
       CapApp.getLaunchUrl().then((r) => handleQuickUrl(r?.url));
       CapApp.addListener("appUrlOpen", (e) => handleQuickUrl(e.url));
       // 省电:原生前后台切换(比 WebView visibilitychange 更可靠)→ 暂停/恢复动画
+      // 显式设初始值,防因 data-idle 悬空导致 CSS 选择器误匹配
+      document.documentElement.setAttribute("data-idle", "0");
       CapApp.addListener("appStateChange", ({ isActive }) => {
         document.documentElement.setAttribute("data-idle", isActive ? "0" : "1");
       });
