@@ -254,6 +254,9 @@ body {
   margin: 0;
   padding: 0;
   height: 100%;
+  /* 忽略系统字体自动放大(部分 OEM WebView 会按系统字号缩放文本) */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {

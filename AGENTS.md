@@ -46,7 +46,7 @@
 - **release keystore**：`F:\AIGenerate\APP\keystore\freegrid-release.jks`（仓库外，有效期 ~27 年，别名 `freegrid`）。
 - **口令**：在 `android/keystore.properties`（**已 gitignore，不入库**）。证书 `CN=FreeGrid`，SHA-256 指纹 `0ce657932cd56ec583fd081812d2870a3c50ed9f655d33abadd5dadab6405d87`。
 - **铁律 1**：`freegrid-release.jks` + `keystore.properties` **必须异地备份**。丢了 = 所有老用户永远无法再升级。
-- **铁律 2**：每次发布 **`versionCode` 必须 +1**（在 `android/app/build.gradle`）。当前已到 93（v2.70）。
+- **铁律 2**：每次发布 **`versionCode` 必须 +1**（在 `android/app/build.gradle`）。当前已到 95（v2.72）。
 - **铁律 3**：**debug 签名与 release 签名互不兼容**。给用户/装真机**永远用 release 版**（`build-release.bat`）。debug↔release 互切必须卸载=丢数据。
 - **铁律 4**：升级用 `adb install -r <release-apk>`（不卸载，保数据）。✅ 已实测 vc2→vc3 数据保留。
 - 用户的**小米 14 Pro 从第一次就装 release 版**，否则将来切 release 要卸载丢数据。
@@ -66,6 +66,7 @@
 - **红线**:全本机、不联网、不进跨端账单备份(`freegrid-backup.json` 格式不变、iOS/web 兼容);AI 密钥不进导出文件;`restore` 仅接受 `freegrid-` 前缀键(防越权写)。无新依赖(Filesystem/App 已装)。`backup-full.test.ts` 6 测,`npm test` 46/46,`svelte-check` 0 error。
 
 ## 已完成的适配
+- ✅ 机型缩放适配(vc95/v2.72):真机反馈 **iQOO 12 Pro / OPPO Find X8 整个画幅被放大**(标题/数字/卡片/间距全等比放大、文案折行),小米 14 Pro 正常。根因:iQOO(Origin/Funtouch)、OPPO(ColorOS)把系统「**显示大小(density)** / **字体大小(fontScale)**」缩放透传给 WebView,小米(HyperOS)默认不透传。修:`MainActivity.java` `attachBaseContext` 用 `createConfigurationContext` 强制 `fontScale=1.0` + `densityDpi=DisplayMetrics.DENSITY_DEVICE_STABLE`(忽略用户字体/显示大小,按设备**稳定密度**渲染;设备本为默认值时=空操作,故小米不受影响);`onCreate` 再 `bridge.getWebView().getSettings().setTextZoom(100)` 双保险;`app.css` html/body 加 `text-size-adjust:100%`。**⚠ 坑**:`MainActivity.java` 用 `Set-Content -Encoding UTF8` 会写 **BOM**,javac 报「非法字符 \ufeff」编译失败——**Java 源码必须无 BOM**(`[System.IO.File]::WriteAllText(path,text,(New-Object System.Text.UTF8Encoding($false)))`)。验证法:emulator 无法直接跑那些机型,用 `adb shell wm density 700`(默认 560)+ `settings put system font_scale 1.25` 复现放大 → 装 vc95 后**覆盖仍在但画幅恢复正常** → `wm density reset`+`font_scale 1.0` 还原。
 - ✅ 省电:隐藏时暂停装饰动画(vc92/v2.69):真机反馈耗电偏高(≈0.54%/min,接近视频 App)——根因是仪表盘星空/流星/辉光的**持续 CSS 动画**在没人看时仍满帧合成。方案(用户选「离开仪表盘停止就行」,不精简辉光):`app.css` 加 `:root[data-idle="1"] *{animation-play-state:paused!important}`;`App.svelte` 切换 `<html data-idle>` —— **原生用 `@capacitor/app` 的 `appStateChange`(isActive→"0"/"1")**,web 用 `visibilitychange`。**⚠ 坑**:原生 WebView 的 `visibilitychange` 在 resume 后可能仍报 hidden,会把动画卡死(实测),故原生**只用 appStateChange**、不挂 visibilitychange。tab 切换本就 unmount 仪表盘(动画随之停),故只需覆盖息屏/切后台。真机验证:? 科普 sheet 前台能正常动画入场(证明未卡死);背景→前台循环后仍正常。paused 保留进度、恢复无缝。**注**:只在隐藏时省电,前台主动看仪表盘的动画开销不变(用户接受)。
 - ✅ 自由天数科普单位对齐 hero(vc90/v2.67):真机反馈「? 科普弹窗里自由天数的单位和外部面板不一致」。根因:`freedomDaysDisplay(fd)` 返回**按档位换算后的显示数**(≥1年时是「月」值,如 35),但科普弹窗 `= 自由天数` 行硬编码「天」→ 显示「35 天」(其实是 35 月),与 hero「35 月」矛盾且公式(净值÷日均净烧=天)不自洽。修:`Dashboard.svelte` 科普行改为显示**原始天数**(`Math.round(vm.freedomDays)` + 千分位 + 「天」,公式除法自洽),`vm.unit !== "day"` 时再追加「· ≈ {freedomDaysDisplay} {unitLabel}」与 hero 对齐。真机验证:195990÷180.4 → 「1,086 天 · ≈ 35 月」,月值与 hero 一致。
 - ✅ 资产/负债明细排序(vc89/v2.66):`Assets.svelte` 明细区标题加排序按钮(≥2 项才显示,「↕ 金额/收益·利率/类型」循环);`sortItems()` 金额↓ / 利率↓(收益或利率,并列按金额)/ 类型(按 `ASSET_TYPES`/`LIABILITY_TYPES` 预设序);选择持久化在 `settings.assetSort`/`liabilitySort`(默认 amount)。CSS:`.detail-head .kicker{margin-right:auto}` 把排序钮+加号推到右侧(排序钮隐藏时加号仍右对齐)。真机验证:负债切「利率」→ 信用卡 18.25% 升到房贷 4.9% 之上(呼应 AI「先还高息」)。
