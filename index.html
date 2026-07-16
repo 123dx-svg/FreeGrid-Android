@@ -4,7 +4,8 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/icons/icon-192.png" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- 锁定参考宽度=小米 14 Pro 基准(≈411),各机型等比缩放填满屏宽 → 模块比例/位置全机型一致,不随设备视口变化。不加 initial-scale(否则视口更宽的机型会被 max() 解锁) -->
+    <meta name="viewport" content="width=411, viewport-fit=cover" />
     <meta name="theme-color" content="#0a0b13" />
     <meta
       name="description"
