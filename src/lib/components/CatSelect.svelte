@@ -1,6 +1,7 @@
 <script lang="ts">
   // 紧凑分类/来源选择器(下拉式)—— 收起时只占 1 行触发器,点开弹出带色点的选项面板。
   // 对齐 iOS 的下拉 Picker,替代占竖向空间的 chip 网格。记支出/记收入共用。
+  import { imeSafe } from "../ime";
   let {
     options,
     value,
@@ -74,7 +75,7 @@
       {#if allowCustom}
         {#if adding}
           <div class="cs-add">
-            <input class="cs-input" {placeholder} bind:value={newName} onkeydown={(e) => e.key === "Enter" && confirmAdd()} />
+            <input class="cs-input" {placeholder} value={newName} use:imeSafe={(v) => (newName = v)} onkeydown={(e) => e.key === "Enter" && !e.isComposing && confirmAdd()} />
             <button type="button" class="cs-ok" onclick={confirmAdd}>加</button>
             <button type="button" class="cs-x" onclick={() => { adding = false; newName = ""; }} aria-label="取消">✕</button>
           </div>

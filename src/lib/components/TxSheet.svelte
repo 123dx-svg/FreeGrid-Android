@@ -11,6 +11,7 @@
   import CatSelect from "./CatSelect.svelte";
   import WheelDateTime from "./WheelDateTime.svelte";
   import FreedomImpact from "./FreedomImpact.svelte";
+  import { imeSafe } from "../ime";
 
   type Values = { amount: number; name: string; note: string; dateTime: Date };
 
@@ -182,7 +183,7 @@
 
   <div class="fg-field">
     <label class="fg-label" for="tx-note">备注 (可选)</label>
-    <input id="tx-note" class="fg-input" type="text" placeholder={kind === "expense" ? "比如:跟朋友吃饭" : "比如:三月奖金"} bind:value={note} />
+    <input id="tx-note" class="fg-input" type="text" placeholder={kind === "expense" ? "比如:跟朋友吃饭" : "比如:三月奖金"} value={note} use:imeSafe={(v) => (note = v)} />
   </div>
 
   <div class="fg-field">

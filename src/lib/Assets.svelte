@@ -10,6 +10,7 @@
   import { ASSET_TYPES, LIABILITY_TYPES } from "./models";
   import { assetTypeColor, liabilityTypeColor } from "./categoryColors";
   import { settings, type AssetSort } from "./settings.svelte";
+import { imeSafe } from "./ime";
   import {
     store,
     updateBucket,
@@ -393,7 +394,7 @@
     </div>
     <div class="fg-field">
       <label class="fg-label" for="asset-name">备注(可选)</label>
-      <input id="asset-name" class="fg-input" type="text" placeholder="比如:招行三年定期 / 沪深300" bind:value={assetName} />
+          <input id="asset-name" class="fg-input" type="text" placeholder="比如:招行三年定期 / 沪深300" value={assetName} use:imeSafe={(v) => (assetName = v)} />
     </div>
     <div class="fg-field">
       <label class="fg-label" for="asset-rate">年化收益率 %(可选)</label>
