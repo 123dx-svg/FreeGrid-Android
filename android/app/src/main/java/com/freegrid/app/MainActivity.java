@@ -27,6 +27,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(FreedomWidgetPlugin.class);
+        registerPlugin(ApkInstallerPlugin.class);
         super.onCreate(savedInstanceState);
         WebView wv = this.bridge != null ? this.bridge.getWebView() : null;
         if (wv != null) {

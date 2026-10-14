@@ -6,12 +6,14 @@
   import Check from "./lib/Check.svelte";
   import BadgeToast from "./lib/components/BadgeToast.svelte";
   import LevelUpToast from "./lib/components/LevelUpToast.svelte";
+  import AndroidUpdatePrompt from "./lib/components/AndroidUpdatePrompt.svelte";
   import { store, initStore } from "./lib/store.svelte";
   import { deriveDashboard } from "./lib/derive";
   import { loadFqResult } from "./lib/fq-test";
   import { reconcileFromData } from "./lib/achievements.svelte";
   import { updateFreedomWidget } from "./lib/widget";
   import { checkForUpdate, installUpdate, updateState } from "./lib/updater.svelte";
+  import { checkForAndroidUpdate, resumeAndroidUpdate } from "./lib/android-updater.svelte";
   import { settings, resolvedTheme, toggleThemeManual } from "./lib/settings.svelte";
   import { closeTopOverlay } from "./lib/overlay";
   import { requestQuickAdd } from "./lib/quickadd.svelte";
@@ -19,6 +21,7 @@
 
   initStore(); // 水合本机存档;无数据则空白起点(不自动种演示数据,仅 ?demo=1 例外)
   checkForUpdate(); // 桌面端静默检查更新;网页端 no-op(__TAURI_INTERNALS__ 守卫)
+  if (Capacitor.getPlatform() === "android") void checkForAndroidUpdate();
 
   let tab = $state(settings.startTab || "dashboard");
 
@@ -53,6 +56,7 @@
       document.documentElement.setAttribute("data-idle", "0");
       CapApp.addListener("appStateChange", ({ isActive }) => {
         document.documentElement.setAttribute("data-idle", isActive ? "0" : "1");
+        if (Capacitor.getPlatform() === "android") void resumeAndroidUpdate(isActive);
       });
     });
   }
@@ -227,6 +231,7 @@
 <!-- 徽章解锁庆祝浮层(全局) -->
 <BadgeToast onOpenWall={() => (tab = "check")} />
 <LevelUpToast onOpen={() => (tab = "check")} />
+<AndroidUpdatePrompt />
 
 <style>
   .shell {

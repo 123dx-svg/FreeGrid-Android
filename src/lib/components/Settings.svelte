@@ -7,6 +7,7 @@
   import { deriveDashboard } from "../derive";
   import { loadFqResult } from "../fq-test";
   import { isTauri, checkForUpdate, installUpdate, updateState } from "../updater.svelte";
+  import { androidUpdateState, checkForAndroidUpdate } from "../android-updater.svelte";
   import { Capacitor } from "@capacitor/core";
   import {
     settings,
@@ -156,6 +157,25 @@
         <button class="about-btn" disabled={updateState.status === "checking"} onclick={checkForUpdate}>
           {updateState.status === "checking" ? "检查中…" : updateState.status === "uptodate" ? "已是最新版本 ✓" : "检查更新"}
         </button>
+      {/if}
+    {/if}
+
+    {#if Capacitor.getPlatform() === "android"}
+      <button
+        class="about-btn"
+        disabled={androidUpdateState.status === "checking" || androidUpdateState.status === "downloading" || androidUpdateState.status === "installing"}
+        onclick={checkForAndroidUpdate}
+      >
+        {androidUpdateState.status === "checking"
+          ? "检查中…"
+          : androidUpdateState.available
+            ? `发现 v${androidUpdateState.version} · 重新检查`
+            : androidUpdateState.status === "uptodate"
+              ? "已是最新版本 ✓"
+              : "检查更新"}
+      </button>
+      {#if androidUpdateState.status === "error"}
+        <p class="set-lead" role="status">{androidUpdateState.error}</p>
       {/if}
     {/if}
 
