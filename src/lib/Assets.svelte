@@ -9,6 +9,8 @@
   import CatSelect from "./components/CatSelect.svelte";
   import { ASSET_TYPES, LIABILITY_TYPES } from "./models";
   import { assetTypeColor, liabilityTypeColor } from "./categoryColors";
+  import { convertToCny, cnyPerUnit, type AssetCurrency } from "./currency";
+  import { fxState, refreshDailyFxRates } from "./fx.svelte";
   import { settings, type AssetSort } from "./settings.svelte";
 import { imeSafe } from "./ime";
   import {
@@ -78,23 +80,35 @@ import { imeSafe } from "./ime";
   let showAssetSheet = $state(false);
   let assetEditId = $state<string | null>(null);
   let assetType = $state<string>(ASSET_TYPES[0]);
+  let assetCurrency = $state<AssetCurrency>("CNY");
   let assetName = $state("");
   let assetAmount = $state("");
   let assetRate = $state("");
+  const assetCurrencyRate = $derived(cnyPerUnit(assetCurrency, fxState.rates));
+  const assetRmbPreview = $derived(convertToCny(Number(assetAmount), assetCurrency, fxState.rates));
   const assetValid = $derived.by(() => {
     const v = Number(assetAmount);
-    return Number.isFinite(v) && v > 0;
+    return Number.isFinite(v) && v > 0 && assetCurrencyRate != null;
   });
+  function setAssetCurrency(currency: AssetCurrency) {
+    assetCurrency = currency;
+    if (currency !== "CNY") void refreshDailyFxRates();
+  }
+  const foreignAmount = (amount: number, currency: AssetCurrency) =>
+    `${currency === "HKD" ? "HK$" : "US$"}${amount.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
   function openAsset(id: string | null) {
     assetEditId = id;
     if (id) {
       const it = store.assets.assetItems.find((x) => x.id === id);
       assetType = it?.type ?? ASSET_TYPES[0];
+      assetCurrency = it?.currency ?? "CNY";
       assetName = it?.name ?? "";
-      assetAmount = it ? String(Math.round(it.amount)) : "";
+      assetAmount = it ? String(it.currencyAmount ?? it.amount) : "";
       assetRate = it && it.rate > 0 ? String(it.rate) : "";
+      if (assetCurrency !== "CNY") void refreshDailyFxRates();
     } else {
       assetType = ASSET_TYPES[0];
+      assetCurrency = "CNY";
       assetName = "";
       assetAmount = "";
       assetRate = "";
@@ -103,9 +117,15 @@ import { imeSafe } from "./ime";
   }
   function saveAsset() {
     if (!assetValid) return;
+    const currencyAmount = Number(assetAmount);
+    const amount = convertToCny(currencyAmount, assetCurrency, fxState.rates);
+    if (amount == null) return;
     const rate = Number(assetRate) || 0;
-    if (assetEditId) updateAssetItem(assetEditId, { type: assetType, amount: Number(assetAmount), name: assetName, rate });
-    else addAssetItem(assetType, Number(assetAmount), assetName, rate);
+    if (assetEditId) {
+      updateAssetItem(assetEditId, { type: assetType, amount, name: assetName, rate, currency: assetCurrency, currencyAmount });
+    } else {
+      addAssetItem(assetType, amount, assetName, rate, assetCurrency, currencyAmount);
+    }
     showAssetSheet = false;
   }
   function delAsset() {
@@ -275,7 +295,12 @@ import { imeSafe } from "./ime";
               <button class="item-row" onclick={() => openAsset(it.id)}>
                 <span class="item-dot" style="background:{assetTypeColor(it.type)}"></span>
                 <span class="item-type">{it.type}</span>
-                {#if it.name}<span class="item-name">{it.name}</span>{/if}
+                  <span class="item-copy">
+                    {#if it.name}<span class="item-name">{it.name}</span>{/if}
+                    {#if it.currency === "HKD" || it.currency === "USD"}
+                      <span class="item-currency num">{foreignAmount(it.currencyAmount ?? it.amount, it.currency)}</span>
+                    {/if}
+                  </span>
                 {#if it.rate > 0}<span class="item-rate gain num">{it.rate}%</span>{/if}
                 <span class="item-amt num">{yuan(it.amount)}</span>
               </button>
@@ -389,8 +414,30 @@ import { imeSafe } from "./ime";
       <CatSelect options={assetTypeOpts} value={assetType} onSelect={(n) => (assetType = n)} addLabel="类型" />
     </div>
     <div class="fg-field">
-      <label class="fg-label" for="asset-amt">金额(元)</label>
+      <span class="fg-label">币种</span>
+      <div class="currency-switch" role="group" aria-label="资产币种">
+        <button class:on={assetCurrency === "CNY"} aria-pressed={assetCurrency === "CNY"} onclick={() => setAssetCurrency("CNY")}>人民币 CNY</button>
+        <button class:on={assetCurrency === "HKD"} aria-pressed={assetCurrency === "HKD"} onclick={() => setAssetCurrency("HKD")}>港币 HKD</button>
+        <button class:on={assetCurrency === "USD"} aria-pressed={assetCurrency === "USD"} onclick={() => setAssetCurrency("USD")}>美元 USD</button>
+      </div>
+      {#if assetCurrency !== "CNY"}
+        {#if fxState.status === "checking"}
+          <p class="sheet-hint">正在查询每日参考汇率…</p>
+        {:else if fxState.status === "error"}
+          <p class="sheet-hint">今日汇率查询失败{fxState.date ? `，暂用 ${fxState.date} 的缓存汇率` : "，请明日重试"}。</p>
+        {:else if fxState.rates}
+          <p class="sheet-hint">ECB 参考汇率 · 数据日期 {fxState.date}</p>
+        {:else}
+          <p class="sheet-hint">暂无可用汇率，暂不能保存外币资产。</p>
+        {/if}
+      {/if}
+    </div>
+    <div class="fg-field">
+      <label class="fg-label" for="asset-amt">金额({assetCurrency})</label>
       <input id="asset-amt" class="fg-input fg-amount num" type="text" inputmode="decimal" placeholder="0" bind:value={assetAmount} />
+      {#if assetCurrency !== "CNY" && assetRmbPreview != null && assetAmount}
+        <p class="sheet-hint moss">折合人民币 {yuan(assetRmbPreview)}</p>
+      {/if}
     </div>
     <div class="fg-field">
       <label class="fg-label" for="asset-name">备注(可选)</label>
@@ -588,6 +635,32 @@ import { imeSafe } from "./ime";
     margin: 6px 0 0;
     line-height: 1.5;
   }
+  .currency-switch {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    padding: 4px;
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    background: var(--mist2);
+  }
+  .currency-switch button {
+    min-width: 0;
+    padding: 8px 3px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ink-faint);
+    font-family: var(--font-rounded);
+    font-size: 12px;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .currency-switch button.on {
+    border-color: var(--hairline);
+    background: var(--paper);
+    color: var(--sky-deep);
+  }
   .sheet-hint.moss {
     color: var(--moss);
     font-family: var(--font-mono);
@@ -780,6 +853,13 @@ import { imeSafe } from "./ime";
   .item-type {
     font-weight: 500;
   }
+  .item-copy {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
   .item-name {
     color: var(--ink-faint);
     font-size: 13px;
@@ -787,6 +867,10 @@ import { imeSafe } from "./ime";
     white-space: nowrap;
     text-overflow: ellipsis;
     min-width: 0;
+  }
+  .item-currency {
+    color: var(--ink-faint);
+    font-size: 11px;
   }
   .item-rate {
     font-size: 12px;

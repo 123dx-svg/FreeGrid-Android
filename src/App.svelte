@@ -14,6 +14,7 @@
   import { updateFreedomWidget } from "./lib/widget";
   import { checkForUpdate, installUpdate, updateState } from "./lib/updater.svelte";
   import { checkForAndroidUpdate, resumeAndroidUpdate } from "./lib/android-updater.svelte";
+  import { refreshDailyFxRates } from "./lib/fx.svelte";
   import { settings, resolvedTheme, toggleThemeManual } from "./lib/settings.svelte";
   import { closeTopOverlay } from "./lib/overlay";
   import { requestQuickAdd } from "./lib/quickadd.svelte";
@@ -22,6 +23,9 @@
   initStore(); // 水合本机存档;无数据则空白起点(不自动种演示数据,仅 ?demo=1 例外)
   checkForUpdate(); // 桌面端静默检查更新;网页端 no-op(__TAURI_INTERNALS__ 守卫)
   if (Capacitor.getPlatform() === "android") void checkForAndroidUpdate();
+  if (store.assets.assetItems.some((item) => item.currency === "HKD" || item.currency === "USD")) {
+    void refreshDailyFxRates();
+  }
 
   let tab = $state(settings.startTab || "dashboard");
 

@@ -8,6 +8,8 @@
 
 // ---- 运行时领域模型(app 内部用,date 都是 Date 对象) ----
 
+import type { AssetCurrency } from "./currency";
+
 export interface Expense {
   id: string;
   amount: number; // 元,正数
@@ -51,6 +53,8 @@ export interface AssetItem {
   name: string; // 备注名(可空,如「招行三年定期」)
   amount: number; // 元,正数
   rate: number; // 年化收益率 %(0 = 未填,如定期/债券/基金预期年化)
+  currency?: AssetCurrency; // 原币种;省略或 CNY = 人民币
+  currencyAmount?: number; // 原币面额;amount 始终保存折合人民币
 }
 
 /** 负债明细项:一笔具体的负债(如「房贷 ¥800000 @4.9%」)。amount 之和 = liabilities。 */
@@ -85,6 +89,8 @@ export interface BackupAssetItemJSON {
   name?: string | null;
   amount: number;
   rate?: number | null;
+  currency?: AssetCurrency | null;
+  currency_amount?: number | null;
 }
 export interface BackupLiabilityItemJSON {
   type: string;

@@ -56,7 +56,7 @@
 
   <div class="foot">
     <span class="dot-on"></span>
-    本地存储 · 零网络
+    账目仅存本机 · AI / 外币汇率按需联网
     <span class="ver num">v{version}</span>
   </div>
 </aside>

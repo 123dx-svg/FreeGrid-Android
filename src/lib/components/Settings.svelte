@@ -179,7 +179,7 @@
       {/if}
     {/if}
 
-    <p class="setlist-foot">{aiConfig.enabled ? "本地优先 · AI 由你开启并自带密钥" : "纯本地 · 零网络 · 数据只存本机"}</p>
+    <p class="setlist-foot">账目只存本机 · AI / 外币汇率按需联网</p>
   </div>
 </Sheet>
 

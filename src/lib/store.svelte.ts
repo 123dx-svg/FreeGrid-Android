@@ -10,6 +10,8 @@
 import { makeDemoData } from "./demo";
 import { suggestCategory } from "./models";
 import type { Expense, Income, PassiveSource, UserAssets, BackupJSON, AssetItem, LiabilityItem } from "./models";
+import type { AssetCurrency, CnyRates } from "./currency";
+import { convertToCny } from "./currency";
 import { exportBadgeMeta } from "./achievements.svelte";
 import { loadFqResult } from "./fq-test";
 
@@ -64,7 +66,14 @@ export function toBackup(): BackupJSON {
       liabilities: store.assets.liabilities || undefined,
       updated_at: store.assets.updatedAt.toISOString(),
       asset_items: store.assets.assetItems.length
-        ? store.assets.assetItems.map((a) => ({ type: a.type, name: a.name || undefined, amount: a.amount, rate: a.rate || undefined }))
+        ? store.assets.assetItems.map((a) => ({
+            type: a.type,
+            name: a.name || undefined,
+            amount: a.amount,
+            rate: a.rate || undefined,
+            currency: a.currency && a.currency !== "CNY" ? a.currency : undefined,
+            currency_amount: a.currency && a.currency !== "CNY" ? a.currencyAmount : undefined,
+          }))
         : undefined,
       liability_items: store.assets.liabilityItems.length
         ? store.assets.liabilityItems.map((l) => ({ type: l.type, amount: l.amount, rate: l.rate || undefined }))
@@ -141,6 +150,12 @@ export function fromBackup(json: BackupJSON): Parsed {
     name: a.name ?? "",
     amount: Math.max(0, a.amount || 0),
     rate: Math.max(0, a.rate ?? 0),
+    currency: (a.currency === "HKD" || a.currency === "USD") && typeof a.currency_amount === "number" && Number.isFinite(a.currency_amount) && a.currency_amount >= 0
+      ? a.currency
+      : "CNY",
+    currencyAmount: (a.currency === "HKD" || a.currency === "USD") && typeof a.currency_amount === "number" && Number.isFinite(a.currency_amount) && a.currency_amount >= 0
+      ? a.currency_amount
+      : Math.max(0, a.amount || 0),
   }));
   const liabilityItems: LiabilityItem[] = (json.assets?.liability_items ?? []).map((l) => ({
     id: nid(),
@@ -375,7 +390,7 @@ function migrateAssetsToItems(): boolean {
   if (!Array.isArray(a.liabilityItems)) a.liabilityItems = [];
   let changed = false;
   if (a.assetItems.length === 0 && a.lockedAssets > 0) {
-    a.assetItems = [{ id: nid(), type: "其他", name: "", amount: a.lockedAssets }];
+    a.assetItems = [{ id: nid(), type: "其他", name: "", amount: a.lockedAssets, rate: 0, currency: "CNY", currencyAmount: a.lockedAssets }];
     changed = true;
   }
   if (a.liabilityItems.length === 0 && a.liabilities > 0) {
@@ -386,19 +401,47 @@ function migrateAssetsToItems(): boolean {
 }
 
 // ── 资产明细 CRUD ──
-export function addAssetItem(type: string, amount: number, name = "", rate = 0) {
+export function addAssetItem(
+  type: string,
+  amount: number,
+  name = "",
+  rate = 0,
+  currency: AssetCurrency = "CNY",
+  currencyAmount = amount,
+) {
   if (amount <= 0) return;
-  store.assets.assetItems.push({ id: nid(), type, name: name.trim(), amount, rate: Math.max(0, rate) });
+  store.assets.assetItems.push({ id: nid(), type, name: name.trim(), amount, rate: Math.max(0, rate), currency, currencyAmount });
   recomputeAssetTotals();
   touch();
 }
-export function updateAssetItem(id: string, patch: { type?: string; amount?: number; name?: string; rate?: number }) {
+export function updateAssetItem(
+  id: string,
+  patch: { type?: string; amount?: number; name?: string; rate?: number; currency?: AssetCurrency; currencyAmount?: number },
+) {
   const it = store.assets.assetItems.find((x) => x.id === id);
   if (!it) return;
   if (patch.type != null) it.type = patch.type;
   if (patch.amount != null) it.amount = Math.max(0, patch.amount);
   if (patch.name != null) it.name = patch.name.trim();
   if (patch.rate != null) it.rate = Math.max(0, patch.rate);
+  if (patch.currency != null) it.currency = patch.currency;
+  if (patch.currencyAmount != null) it.currencyAmount = Math.max(0, patch.currencyAmount);
+  recomputeAssetTotals();
+  touch();
+}
+
+export function revalueForeignAssetItems(rates: CnyRates) {
+  let changed = false;
+  for (const item of store.assets.assetItems) {
+    if (item.currency !== "HKD" && item.currency !== "USD") continue;
+    if (typeof item.currencyAmount !== "number" || !Number.isFinite(item.currencyAmount)) continue;
+    const amount = convertToCny(item.currencyAmount, item.currency, rates);
+    if (amount != null && amount !== item.amount) {
+      item.amount = amount;
+      changed = true;
+    }
+  }
+  if (!changed) return;
   recomputeAssetTotals();
   touch();
 }

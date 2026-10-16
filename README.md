@@ -8,7 +8,7 @@
 ![Vite](https://img.shields.io/badge/Vite-8-646CFF.svg?logo=vite)
 ![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB.svg?logo=tauri)
 ![PWA](https://img.shields.io/badge/PWA-installable·offline-5a0fc8.svg)
-![Offline](https://img.shields.io/badge/100%25-本地·零网络-2ea44f.svg)
+![Offline](https://img.shields.io/badge/本机存储-零后端-2ea44f.svg)
 
 > 🍎 **产品主页 · 完整理念 · iOS / macOS 原生版 → [FreeGrid-Freedom](https://github.com/coni555/FreeGrid-Freedom)**
 > 本仓库是 FreeGrid 的 Windows 桌面端 + 在线 demo 实现
@@ -20,7 +20,7 @@
 
 ## 这是什么
 
-FreeGrid Web 是 iOS 版 FreeGrid 的**纯前端实现**：同一套「自由天数 / 自由网格」核心概念，用 Svelte 5 重写、为桌面宽屏重排（侧栏导航替代手机底 tab），再用 Tauri 打包成轻量 Windows 桌面版。**零后端、零网络、零账号**——数据只存在你浏览器的 localStorage 里。
+FreeGrid Web 是 iOS 版 FreeGrid 的**纯前端实现**：同一套「自由天数 / 自由网格」核心概念，用 Svelte 5 重写、为桌面宽屏重排（侧栏导航替代手机底 tab），再用 Tauri 打包成轻量 Windows 桌面版。**零后端、零账号**——账目只存在本机 localStorage；使用 HKD/USD 资产时会按需查询每日参考汇率，不上传资产金额或账目。
 
 四屏：**Dashboard**（自由天数 + 自由网格 + 趋势）/ **Assets**（双桶净值 + 被动收入 + 调拨 + 导入导出 + 检查更新）/ **History**（流水 + 分类筛选 + 月度汇总）/ **Check**（8 项财富自由自检）。
 
@@ -61,7 +61,8 @@ npm run tauri build         # 本地打桌面包（需 Rust 工具链）
 
 ## 隐私
 
-- ✅ **零网络层**——没有任何业务 `fetch` / 网络请求，数据从不离开设备（唯一对外请求是桌面版可选的「检查更新」）。
+- ✅ 无后端、无账号、无埋点、无分析；财务数据只存本机。
+- 🌐 使用 HKD/USD 资产时，每日最多向 Frankfurter（ECB 参考汇率）请求一次汇率；请求仅包含币种，不发送金额或账目。桌面版另有可选更新检查；Android 版 AI 仅在用户主动使用时按 BYOK 设置联网。
 - ✅ 无账号、无云、无埋点、无分析；自托管系统字体。
 - ⚠️ 数据存浏览器 localStorage：清浏览器数据会清掉它，导出 JSON 是你的备份通道。
 
